@@ -1,0 +1,39 @@
+flowchart TD
+    A[Queued ingestion_job] --> B[Worker loads job by job_id]
+    B --> C[Load document by project_id + document_id]
+    C --> D[Mark job running and document processing]
+    D --> E{Select parser by file type}
+
+    E -->|PDF| P[PyMuPDF parser]
+    E -->|DOCX| X[python-docx parser]
+    E -->|TXT| T[TXT parser]
+    E -->|XLSX| S[openpyxl parser]
+
+    P --> N[Normalized sections]
+    X --> N
+    T --> N
+    S --> N
+
+    N --> H[Generate chunk candidates]
+    H --> I[Compute content hashes]
+    I --> J[Call embedding provider]
+    J --> K{Validate embeddings}
+
+    K -->|valid| L[Replace sections and chunks in DB]
+    L --> M[DB trigger updates search_vector]
+    M --> O[Mark job completed and document indexed]
+
+    K -->|invalid| F[Mark job failed]
+    E -->|unsupported| F
+    N -->|no usable text| F
+    J -->|API error| F
+    L -->|DB error| F
+
+    F --> G[Store error_message]
+    G --> R[Document leaves processing state]
+
+    subgraph Safety[Reindex Safety]
+        Old[Existing indexed chunks]
+        New[New parse/chunk/embed result]
+        Old -->|preserve until new result succeeds| New
+    end

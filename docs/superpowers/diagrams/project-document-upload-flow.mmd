@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant API as FastAPI Documents API
+    participant ProjectService as Project Service
+    participant Storage as Local Storage
+    participant DB as PostgreSQL
+    participant Queue as RQ / Redis
+    participant Worker as Ingestion Worker
+
+    User->>API: POST /api/projects/{project_id}/documents
+    API->>ProjectService: verify project exists
+    ProjectService->>DB: SELECT project by project_id
+    DB-->>ProjectService: project found
+    API->>API: validate file type and size
+    API->>Storage: write file to data/uploads/{project_id}/{document_id}/
+    Storage-->>API: storage_path
+    API->>DB: INSERT document(status=uploaded)
+    API->>DB: INSERT ingestion_job(status=queued)
+    API->>Queue: enqueue(job_id, project_id, document_id)
+    Queue-->>API: queued
+    API-->>User: document + ingestion_job
+    Queue->>Worker: deliver ingestion job
+    Worker->>DB: later updates job/document status

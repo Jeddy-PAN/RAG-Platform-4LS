@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant API as Chat API
+    participant Conv as Conversation Service
+    participant Retrieval as Retrieval Engine
+    participant Prompt as Prompt Assembly
+    participant LLM as Chat Provider
+    participant DB as PostgreSQL
+    participant Feedback as Feedback API
+
+    User->>API: POST /api/projects/{project_id}/chat/messages
+    API->>Conv: create or validate conversation(project_id)
+    Conv->>DB: insert user message
+    API->>Retrieval: retrieve(project_id, query, options)
+    Retrieval->>DB: project-scoped chunk search
+    Retrieval-->>API: chunks + retrieval_log_id
+
+    alt no usable context
+        API->>DB: insert assistant refusal message
+        API-->>User: no-answer response
+    else context available
+        API->>Prompt: build messages and citation map
+        Prompt-->>API: provider messages
+        API->>LLM: generate answer
+        LLM-->>API: answer text + model metadata
+        API->>DB: insert assistant message
+        API->>DB: insert message_citations linked to chunks
+        API-->>User: answer + citations
+    end
+
+    User->>Feedback: POST /api/projects/{project_id}/feedback
+    Feedback->>DB: validate assistant message belongs to project_id
+    Feedback->>DB: insert feedback rating
+    Feedback-->>User: feedback record

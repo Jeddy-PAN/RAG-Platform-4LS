@@ -1,0 +1,68 @@
+erDiagram
+    projects ||--o{ documents : owns
+    projects ||--o{ document_sections : scopes
+    projects ||--o{ chunks : scopes
+    projects ||--o{ ingestion_jobs : scopes
+    projects ||--o{ conversations : owns
+    projects ||--o{ messages : scopes
+    projects ||--o{ message_citations : scopes
+    projects ||--o{ retrieval_logs : owns
+    projects ||--o{ retrieval_log_chunks : scopes
+    projects ||--o{ feedback : owns
+    projects ||--o{ eval_datasets : owns
+    projects ||--o{ eval_questions : scopes
+    projects ||--o{ eval_runs : scopes
+    projects ||--o{ eval_results : scopes
+
+    documents ||--o{ document_sections : contains
+    documents ||--o{ chunks : produces
+    documents ||--o{ ingestion_jobs : indexed_by
+    document_sections ||--o{ chunks : splits_into
+
+    conversations ||--o{ messages : contains
+    messages ||--o{ message_citations : cites
+    chunks ||--o{ message_citations : cited_by
+
+    retrieval_logs ||--o{ retrieval_log_chunks : returns
+    chunks ||--o{ retrieval_log_chunks : ranked_as
+
+    eval_datasets ||--o{ eval_questions : contains
+    eval_datasets ||--o{ eval_runs : runs
+    eval_runs ||--o{ eval_results : produces
+    eval_questions ||--o{ eval_results : evaluated_by
+
+    projects {
+        uuid id PK
+        string name
+    }
+
+    documents {
+        uuid id PK
+        uuid project_id FK
+        string status
+    }
+
+    chunks {
+        uuid id PK
+        uuid project_id FK
+        uuid document_id FK
+        vector embedding
+        tsvector search_vector
+    }
+
+    conversations {
+        uuid id PK
+        uuid project_id FK
+    }
+
+    retrieval_logs {
+        uuid id PK
+        uuid project_id FK
+        string mode
+    }
+
+    eval_runs {
+        uuid id PK
+        uuid project_id FK
+        json metrics
+    }

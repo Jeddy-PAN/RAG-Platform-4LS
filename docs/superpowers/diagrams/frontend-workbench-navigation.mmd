@@ -1,0 +1,40 @@
+flowchart LR
+    A[Top Bar] --> B[Workbench Shell]
+
+    B --> C[Left Sidebar]
+    B --> D[Right Chat Workspace]
+
+    C --> E[Upper 60%: Projects]
+    C --> F[Lower 40%: Upload Zone]
+
+    E --> G[Plus Icon: Add Project]
+    E --> H[Edit Icon: Toggle Edit Mode]
+    E --> I[Project Rows]
+    I --> J[Expandable File Tree]
+    I --> K[Double-click or keyboard action selects project]
+    H --> L[Per-row Edit/Delete Actions]
+
+    F --> M[Drag and Drop Files]
+    F --> N[Click to Select Files]
+    M --> O[Upload to Active Project]
+    N --> O
+
+    D --> P{Conversation started?}
+    P -->|No| Q[Centered Title + Translucent Composer]
+    P -->|Yes| R[Conversation Area]
+    R --> S[Assistant Answers]
+    S --> T[Citations]
+    S --> U[Feedback Controls]
+    R --> V[Composer near bottom]
+
+    D --> W[Floating Retrieval Button]
+    W --> X[Retrieval Playground Route]
+
+    subgraph ProjectContext[Active Project Context]
+        K
+        O
+        R
+        X
+    end
+
+    ProjectContext -. all API calls include .-> Y[project_id]

@@ -27,10 +27,13 @@ The overall spec covers multiple subsystems. Implementing it as one plan would b
 Each sub-plan should:
 
 - use a filename without dates
-- include exact files to create or modify
-- include test-first steps where practical
-- produce runnable software at the end of the plan
+- describe exact files to create or modify
+- use schema outlines, API contracts, concise pseudocode, or short examples instead of full source files
+- define test targets and verification commands
+- produce a clear implementation boundary for the next coding pass
 - keep the system project-isolated through `project_id`
+
+Full source code belongs in the implementation phase, not in planning documents. If a coding pass needs an execution checklist, create it separately from the module design plan.
 
 ## Proposed Repository Layout
 
@@ -153,6 +156,8 @@ Each sub-plan should:
 
 **Goal:** Parse uploaded documents, normalize extracted sections, chunk text, generate content hashes, call embedding provider, and store chunks with vector/full-text indexes.
 
+**Diagram:** `docs/superpowers/diagrams/ingestion-pipeline-flow.mmd`
+
 **Files:**
 
 - Create: `apps/api/app/ingestion/parsers/base.py`
@@ -181,6 +186,8 @@ Each sub-plan should:
 
 **Goal:** Implement vector search, keyword search, hybrid score fusion, retrieval logs, and project-scoped retrieval APIs.
 
+**Diagram:** `docs/superpowers/diagrams/retrieval-engine-flow.mmd`
+
 **Files:**
 
 - Create: `apps/api/app/rag/retrieval/types.py`
@@ -206,6 +213,8 @@ Each sub-plan should:
 **Output plan file:** `docs/superpowers/plans/chat-citation-feedback-plan.md`
 
 **Goal:** Implement OpenAI-compatible chat provider, answer generation, citation persistence, conversation history, no-answer behavior, and feedback capture.
+
+**Diagram:** `docs/superpowers/diagrams/chat-citation-feedback-flow.mmd`
 
 **Files:**
 
@@ -234,6 +243,8 @@ Each sub-plan should:
 
 **Goal:** Add lightweight eval datasets, eval runs, retrieval hit rate, citation coverage, latency metrics, and dashboard-ready summaries.
 
+**Diagram:** `docs/superpowers/diagrams/evaluation-and-metrics-flow.mmd`
+
 **Files:**
 
 - Create: `apps/api/app/api/eval.py`
@@ -254,22 +265,25 @@ Each sub-plan should:
 
 **Output plan file:** `docs/superpowers/plans/frontend-workbench-plan.md`
 
-**Goal:** Build the initial Next.js UI for Dashboard, Projects, Knowledge Base, RAG Chat, and Retrieval Playground.
+**Goal:** Build the initial lightweight Next.js workbench with top bar, project/file sidebar, upload zone, chat workspace, and floating Retrieval Playground entry.
+
+**Diagram:** `docs/superpowers/diagrams/frontend-workbench-navigation.mmd`
 
 **Files:**
 
 - Create: `apps/web/app/layout.tsx`
 - Create: `apps/web/app/page.tsx`
-- Create: `apps/web/app/projects/page.tsx`
-- Create: `apps/web/app/projects/[projectId]/page.tsx`
-- Create: `apps/web/app/projects/[projectId]/knowledge/page.tsx`
-- Create: `apps/web/app/projects/[projectId]/chat/page.tsx`
-- Create: `apps/web/app/projects/[projectId]/retrieval/page.tsx`
-- Create: `apps/web/components/app-shell.tsx`
-- Create: `apps/web/components/project-switcher.tsx`
-- Create: `apps/web/components/document-upload.tsx`
-- Create: `apps/web/components/chat-panel.tsx`
+- Create: `apps/web/app/retrieval/page.tsx`
+- Create: `apps/web/components/top-bar.tsx`
+- Create: `apps/web/components/workbench-shell.tsx`
+- Create: `apps/web/components/project-sidebar.tsx`
+- Create: `apps/web/components/project-list.tsx`
+- Create: `apps/web/components/project-file-tree.tsx`
+- Create: `apps/web/components/sidebar-upload-zone.tsx`
+- Create: `apps/web/components/chat-workspace.tsx`
+- Create: `apps/web/components/message-composer.tsx`
 - Create: `apps/web/components/citation-list.tsx`
+- Create: `apps/web/components/retrieval-floating-button.tsx`
 - Create: `apps/web/components/retrieval-results.tsx`
 - Create: `apps/web/lib/api.ts`
 
@@ -279,7 +293,7 @@ Each sub-plan should:
 - User can upload supported documents.
 - User can see ingestion status.
 - User can chat with citations.
-- User can run retrieval-only queries and compare retrieval modes.
+- User can access Retrieval Playground from the floating button.
 
 ## Sub-Plan 9: Documentation And Local Usage
 
@@ -294,6 +308,8 @@ Each sub-plan should:
 - Create: `docs/provider-configuration.md`
 - Create: `docs/rag-evaluation-guide.md`
 - Create: `docs/sample-workflow.md`
+- Create: `docs/troubleshooting.md`
+- Create: `docs/architecture.md`
 
 **Required checks:**
 
@@ -367,11 +383,11 @@ Expected: retrieval and answer quality metrics can be computed per project.
 
 - [ ] **Step 15: Write and review `frontend-workbench-plan.md`.**
 
-Expected: pages map to the approved V1 frontend modules only.
+Expected: layout maps to the approved lightweight single-screen workbench.
 
 - [ ] **Step 16: Execute the frontend plan.**
 
-Expected: Dashboard, Projects, Knowledge Base, RAG Chat, and Retrieval Playground work against the backend.
+Expected: top bar, project/file sidebar, upload zone, chat workspace, and Retrieval Playground entry work against the backend.
 
 - [ ] **Step 17: Write and review `documentation-and-local-usage-plan.md`.**
 

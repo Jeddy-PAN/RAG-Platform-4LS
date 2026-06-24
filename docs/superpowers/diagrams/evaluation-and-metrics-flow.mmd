@@ -1,0 +1,41 @@
+flowchart TD
+    A[Eval Dataset] --> B[Eval Questions]
+    B --> C[Start Eval Run]
+    C --> D[For each question]
+
+    D --> E[Run project-scoped retrieval]
+    E --> F[Compute retrieval hit]
+    F --> G{run_generation?}
+
+    G -->|yes| H[Run chat answer generation]
+    H --> I[Compute citation coverage]
+    H --> J[Compute refusal behavior]
+
+    G -->|no| K[Skip generation metrics]
+
+    I --> L[Store eval_result]
+    J --> L
+    K --> L
+    F --> L
+
+    L --> M{More questions?}
+    M -->|yes| D
+    M -->|no| N[Aggregate run metrics]
+    N --> O[Store eval_run metrics]
+
+    O --> P[Project metrics summary]
+    Q[Retrieval logs] --> P
+    R[Feedback] --> P
+    S[Documents and chunks] --> P
+
+    subgraph Isolation[Project Isolation]
+        X[dataset.project_id]
+        Y[question.project_id]
+        Z[run.project_id]
+        W[result.project_id]
+    end
+
+    C -. validate .-> X
+    D -. validate .-> Y
+    O -. store .-> Z
+    L -. store .-> W

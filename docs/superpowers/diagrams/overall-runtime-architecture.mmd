@@ -1,0 +1,30 @@
+flowchart LR
+    User[User] --> Web[Next.js Frontend]
+    Web --> API[FastAPI Backend]
+
+    API --> DB[(PostgreSQL + pgvector)]
+    API --> Redis[(Redis)]
+    API --> LLM[OpenAI-Compatible LLM API]
+    API --> Embedding[OpenAI-Compatible Embedding API]
+
+    Redis --> Worker[RQ Worker]
+    Worker --> Storage[Local File Storage]
+    Worker --> DB
+    Worker --> Embedding
+
+    DB --> API
+    API --> Web
+
+    subgraph ProjectIsolation[Project Isolation]
+        ProjectID[project_id]
+        Docs[documents]
+        Chunks[chunks]
+        Conversations[conversations]
+        Logs[retrieval and eval logs]
+        ProjectID --> Docs
+        ProjectID --> Chunks
+        ProjectID --> Conversations
+        ProjectID --> Logs
+    end
+
+    API -. every retrieval/chat/eval query filters by .-> ProjectID

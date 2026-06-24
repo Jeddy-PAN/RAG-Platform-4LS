@@ -42,6 +42,10 @@ These can be added later through stable interfaces, but the first version focuse
 
 The system has five runtime services:
 
+Architecture diagram:
+
+- `docs/superpowers/diagrams/overall-runtime-architecture.mmd`
+
 1. Frontend
    - Next.js application.
    - Provides project management, document management, RAG chat, retrieval playground, and dashboard views.
@@ -300,42 +304,38 @@ Important API behavior:
 - Retrieval APIs should return debug details for learning and tuning.
 - Document upload should return a document and job status.
 
-## Frontend Pages
+## Frontend Workbench
 
-V1 includes only important modules:
+V1 uses a lightweight single-screen workbench instead of a heavy multi-page dashboard.
 
-1. Dashboard
-   - project count
-   - document count
-   - chunk count
-   - recent ingestion jobs
-   - recent queries
-   - basic latency metrics
+Primary layout:
 
-2. Projects
-   - list projects
-   - create project
-   - open project
-   - edit project name/description
+- top bar
+- left sidebar
+- right chat workspace
+- floating Retrieval Playground entry
 
-3. Knowledge Base
-   - upload PDF/DOCX/TXT/XLSX
-   - document list
-   - ingestion status
-   - re-index document
-   - delete document
+Left sidebar:
 
-4. RAG Chat
-   - project-scoped chat
-   - answer with citations
-   - conversation history
-   - feedback buttons
+- upper area for Projects and expandable project files
+- plus icon for adding projects
+- edit icon for toggling project edit mode
+- per-project edit/delete actions in edit mode
+- collapsible files under each project
+- lower area for drag-and-drop document upload
 
-5. Retrieval Playground
-   - run query without generation
-   - compare vector, keyword, and hybrid retrieval
-   - tune top_k and weights
-   - inspect returned chunks and scores
+Right chat workspace:
+
+- simple title and translucent input before the first message
+- after first message, conversation appears above and composer moves near the bottom
+- assistant answers can show citations and feedback controls
+
+Retrieval Playground:
+
+- accessed through a lightweight floating button
+- can open as a route first
+- compares vector, keyword, and hybrid retrieval
+- shows returned chunks and scores
 
 Later pages:
 
@@ -398,14 +398,10 @@ Optional later:
 10. pgvector and full-text indexing
 11. Retrieval API with vector, keyword, and hybrid modes
 12. Chat API with citations
-13. Frontend shell and project pages
-14. Knowledge Base page
-15. RAG Chat page
-16. Retrieval Playground page
-17. Feedback logging
-18. Basic dashboard metrics
-19. Lightweight eval dataset and run APIs
-20. Documentation and sample data
+13. Feedback logging
+14. Lightweight eval dataset and run APIs
+15. Single-screen frontend workbench
+16. Documentation and sample data
 
 ## Risks And Mitigations
 

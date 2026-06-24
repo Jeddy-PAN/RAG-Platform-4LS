@@ -1,0 +1,38 @@
+flowchart TD
+    A[Retrieval API request] --> B[Validate project_id and request]
+    B --> C{Retrieval mode}
+
+    C -->|vector| V1[Embed query]
+    V1 --> V2[pgvector search chunks]
+    V2 --> V3[Filter by project_id]
+    V3 --> V4[Return vector candidates]
+
+    C -->|keyword| K1[Build text search query]
+    K1 --> K2[PostgreSQL full-text search]
+    K2 --> K3[Filter by project_id]
+    K3 --> K4[Return keyword candidates]
+
+    C -->|hybrid| H1[Embed query]
+    H1 --> H2[Fetch vector candidates]
+    C --> H3[Fetch keyword candidates]
+    H2 --> H4[Merge by chunk_id]
+    H3 --> H4
+    H4 --> H5[Normalize scores]
+    H5 --> H6[Apply weighted fusion]
+    H6 --> H7[Sort and trim top_k]
+
+    V4 --> R[Build retrieval response]
+    K4 --> R
+    H7 --> R
+
+    R --> L1[Create retrieval_log]
+    L1 --> L2[Create retrieval_log_chunks]
+    L2 --> API[Return results with scores and retrieval_log_id]
+
+    subgraph Isolation[Required Isolation]
+        P[Every chunk query includes project_id]
+    end
+
+    V3 -. enforced .-> P
+    K3 -. enforced .-> P
+    H4 -. merged candidates retain project_id .-> P
