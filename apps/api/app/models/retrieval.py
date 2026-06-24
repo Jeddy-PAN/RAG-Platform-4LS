@@ -2,10 +2,10 @@ import enum
 import uuid
 
 from sqlalchemy import Enum, Float, ForeignKey, Index, Integer, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import json_dict_type, uuid_type
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -25,7 +25,7 @@ class RetrievalLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -37,7 +37,9 @@ class RetrievalLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     top_k: Mapped[int] = mapped_column(Integer, nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    retrieval_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    retrieval_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     project: Mapped["Project"] = relationship(back_populates="retrieval_logs")
     chunks: Mapped[list["RetrievalLogChunk"]] = relationship(
@@ -55,19 +57,19 @@ class RetrievalLogChunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     retrieval_log_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("retrieval_logs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     chunk_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("chunks.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -76,6 +78,8 @@ class RetrievalLogChunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     vector_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     keyword_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     fused_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    score_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    score_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     retrieval_log: Mapped[RetrievalLog] = relationship(back_populates="chunks")

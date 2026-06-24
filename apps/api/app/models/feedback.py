@@ -2,10 +2,10 @@ import enum
 import uuid
 
 from sqlalchemy import Enum, ForeignKey, Index, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import uuid_type
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -23,19 +23,19 @@ class Feedback(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     message_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("messages.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

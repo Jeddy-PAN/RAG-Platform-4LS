@@ -17,17 +17,38 @@ branch_labels = None
 depends_on = None
 
 
-document_status = sa.Enum(
-    "uploaded", "processing", "indexed", "failed", name="document_status"
+document_status = postgresql.ENUM(
+    "uploaded",
+    "processing",
+    "indexed",
+    "failed",
+    name="document_status",
+    create_type=False,
 )
-ingestion_job_status = sa.Enum(
-    "queued", "running", "completed", "failed", name="ingestion_job_status"
+ingestion_job_status = postgresql.ENUM(
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    name="ingestion_job_status",
+    create_type=False,
 )
-message_role = sa.Enum("user", "assistant", "system", name="message_role")
-retrieval_mode = sa.Enum("vector", "keyword", "hybrid", name="retrieval_mode")
-feedback_rating = sa.Enum("useful", "not_useful", name="feedback_rating")
-eval_run_status = sa.Enum(
-    "queued", "running", "completed", "failed", name="eval_run_status"
+message_role = postgresql.ENUM(
+    "user", "assistant", "system", name="message_role", create_type=False
+)
+retrieval_mode = postgresql.ENUM(
+    "vector", "keyword", "hybrid", name="retrieval_mode", create_type=False
+)
+feedback_rating = postgresql.ENUM(
+    "useful", "not_useful", name="feedback_rating", create_type=False
+)
+eval_run_status = postgresql.ENUM(
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    name="eval_run_status",
+    create_type=False,
 )
 
 

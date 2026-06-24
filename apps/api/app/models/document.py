@@ -2,10 +2,10 @@ import enum
 import uuid
 
 from sqlalchemy import Enum, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import json_dict_type, uuid_type
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -32,7 +32,7 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -47,7 +47,9 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=DocumentStatus.uploaded,
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    source_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     project: Mapped["Project"] = relationship(back_populates="documents")
     sections: Mapped[list["DocumentSection"]] = relationship(
@@ -73,20 +75,22 @@ class DocumentSection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     section_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    source_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    source_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     document: Mapped[Document] = relationship(back_populates="sections")
 
@@ -100,13 +104,13 @@ class IngestionJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -117,6 +121,8 @@ class IngestionJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=IngestionJobStatus.queued,
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    job_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    job_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     document: Mapped[Document] = relationship(back_populates="ingestion_jobs")

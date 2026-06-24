@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="example-embedding-model")
     embedding_dimensions: int = Field(default=1024)
 
+    upload_storage_dir: str = Field(default="data/uploads")
+    max_upload_size_bytes: int = Field(default=50 * 1024 * 1024)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

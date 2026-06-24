@@ -2,10 +2,10 @@ import enum
 import uuid
 
 from sqlalchemy import Enum, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import json_dict_type, uuid_type
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -24,7 +24,7 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -47,13 +47,13 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -63,7 +63,9 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    message_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    message_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
     citations: Mapped[list["MessageCitation"]] = relationship(
@@ -81,25 +83,27 @@ class MessageCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     message_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("messages.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     chunk_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("chunks.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     citation_index: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str | None] = mapped_column(Text, nullable=True)
-    citation_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    citation_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     message: Mapped[Message] = relationship(back_populates="citations")

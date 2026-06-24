@@ -2,10 +2,10 @@ import enum
 import uuid
 
 from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.types import json_dict_type, uuid_type
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -23,7 +23,7 @@ class EvalDataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (Index("ix_eval_datasets_project", "project_id"),)
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -50,25 +50,25 @@ class EvalQuestion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     dataset_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("eval_datasets.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
     expected_document_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("documents.id", ondelete="SET NULL"),
         nullable=True,
     )
     expected_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("chunks.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -88,13 +88,13 @@ class EvalRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     dataset_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("eval_datasets.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -106,7 +106,7 @@ class EvalRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     retrieval_mode: Mapped[str] = mapped_column(String(40), nullable=False)
     top_k: Mapped[int] = mapped_column(Integer, nullable=False)
-    metrics: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    metrics: Mapped[dict] = mapped_column(json_dict_type(), default=dict, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     dataset: Mapped[EvalDataset] = relationship(back_populates="runs")
@@ -123,19 +123,19 @@ class EvalResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (Index("ix_eval_results_project_run", "project_id", "run_id"),)
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("eval_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     question_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        uuid_type(),
         ForeignKey("eval_questions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -147,6 +147,8 @@ class EvalResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     retrieval_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     generation_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    result_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    result_metadata: Mapped[dict] = mapped_column(
+        json_dict_type(), default=dict, nullable=False
+    )
 
     run: Mapped[EvalRun] = relationship(back_populates="results")
