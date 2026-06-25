@@ -13,6 +13,12 @@ import { ChatWorkspace } from "./chat-workspace";
 import { ProjectSidebar } from "./project-sidebar";
 import { TopBar } from "./top-bar";
 
+const DOCUMENT_POLL_INTERVAL_MS = 2500;
+
+function hasPendingDocuments(documents: DocumentItem[] | undefined): boolean {
+  return documents?.some((document) => document.status === "uploaded" || document.status === "processing") ?? false;
+}
+
 export function WorkbenchShell() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [documentsByProject, setDocumentsByProject] = useState<Record<UUID, DocumentItem[]>>({});
@@ -37,6 +43,18 @@ export function WorkbenchShell() {
     void loadProjects();
   }, []);
 
+  useEffect(() => {
+    if (!activeProjectId || !hasPendingDocuments(documentsByProject[activeProjectId])) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadDocuments(activeProjectId, { silent: true });
+    }, DOCUMENT_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeProjectId, documentsByProject]);
+
   async function loadProjects() {
     setIsLoadingProjects(true);
     setSidebarError(null);
@@ -44,7 +62,10 @@ export function WorkbenchShell() {
       const nextProjects = await projectsApi.list();
       setProjects(nextProjects);
       if (!activeProjectId && nextProjects.length > 0) {
-        setActiveProjectId(nextProjects[0].id);
+        const firstProjectId = nextProjects[0].id;
+        setActiveProjectId(firstProjectId);
+        setExpandedProjectIds((current) => new Set(current).add(firstProjectId));
+        void loadDocuments(firstProjectId);
       }
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to load projects");
@@ -53,19 +74,23 @@ export function WorkbenchShell() {
     }
   }
 
-  async function loadDocuments(projectId: UUID) {
-    setLoadingDocuments((current) => new Set(current).add(projectId));
+  async function loadDocuments(projectId: UUID, options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      setLoadingDocuments((current) => new Set(current).add(projectId));
+    }
     try {
       const documents = await documentsApi.list(projectId);
       setDocumentsByProject((current) => ({ ...current, [projectId]: documents }));
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to load documents");
     } finally {
-      setLoadingDocuments((current) => {
-        const next = new Set(current);
-        next.delete(projectId);
-        return next;
-      });
+      if (!options?.silent) {
+        setLoadingDocuments((current) => {
+          const next = new Set(current);
+          next.delete(projectId);
+          return next;
+        });
+      }
     }
   }
 
