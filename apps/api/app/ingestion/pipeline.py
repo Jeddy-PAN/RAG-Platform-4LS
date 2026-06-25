@@ -15,7 +15,7 @@ from app.models.document import (
     IngestionJob,
     IngestionJobStatus,
 )
-from app.rag.providers.embeddings import OpenAIEmbeddingProvider
+from app.rag.providers.embeddings import get_embedding_provider_from_settings
 from app.rag.providers.types import EmbeddingProvider
 
 
@@ -62,7 +62,7 @@ def ingest_document_job(
         if not chunk_candidates:
             raise ValueError("Document contains no usable text chunks")
 
-        provider = embedding_provider or OpenAIEmbeddingProvider.from_settings()
+        provider = embedding_provider or get_embedding_provider_from_settings()
         vectors = provider.embed_texts([candidate.text for candidate in chunk_candidates])
 
         db.execute(delete(Chunk).where(Chunk.document_id == document_id))

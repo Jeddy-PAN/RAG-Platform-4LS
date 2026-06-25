@@ -10,7 +10,7 @@ The platform currently includes:
 - PostgreSQL with pgvector and PostgreSQL full-text search
 - Redis + RQ worker for document ingestion
 - PDF, DOCX, TXT, and XLSX parsing
-- OpenAI-compatible chat and embedding provider boundaries
+- Cloud chat provider and switchable local/cloud embedding provider boundaries
 - Next.js frontend workbench with project/file sidebar, upload zone, chat, citations, feedback, and Retrieval Playground
 - Docker Compose local runtime with automatic Alembic migration
 
@@ -22,20 +22,42 @@ Create a local environment file:
 cp .env.example .env
 ```
 
-Edit `.env` before using chat or ingestion with real embeddings:
+Install Ollama and pull the default local embedding model:
+
+```bash
+ollama pull bge-m3
+```
+
+Edit `.env` before using chat:
 
 ```bash
 LLM_BASE_URL=https://api.deepseek.com/v1
 LLM_API_KEY=your-chat-provider-key
 LLM_MODEL=deepseek-chat
+```
 
+The default embedding setup is local Ollama with `bge-m3`:
+
+```bash
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_BASE_URL=http://host.docker.internal:11434
+EMBEDDING_MODEL=bge-m3
+EMBEDDING_DIMENSIONS=1024
+```
+
+Use `http://localhost:11434` instead when running the backend directly on macOS instead of through Docker Compose.
+
+If local embedding quality or speed is not good enough, switch to all-cloud by changing only the embedding section:
+
+```bash
+EMBEDDING_PROVIDER=openai_compatible
 EMBEDDING_BASE_URL=https://your-embedding-provider.example/v1
 EMBEDDING_API_KEY=your-embedding-provider-key
 EMBEDDING_MODEL=your-embedding-model
 EMBEDDING_DIMENSIONS=1024
 ```
 
-The embedding dimension must match the database vector dimension created by the initial migration. The current default is `1024`.
+The embedding dimension must match the database vector dimension created by the initial migration. The current default is `1024`, which matches `bge-m3`.
 
 ## Run The Stack
 
@@ -112,4 +134,5 @@ docker compose config
 - `POSTGRES_HOST_PORT=5433` avoids conflicts with another local Postgres on `5432`.
 - `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000` is used by the browser frontend.
 - `CORS_ALLOW_ORIGINS` should include the frontend origin.
+- `EMBEDDING_PROVIDER=ollama` is the preferred local-first setup.
 - Do not commit `.env` or real API keys.

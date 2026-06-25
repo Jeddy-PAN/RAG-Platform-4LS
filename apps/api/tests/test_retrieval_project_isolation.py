@@ -54,7 +54,7 @@ def test_retrieval_never_crosses_project_boundaries(
         db.commit()
 
     monkeypatch.setattr(
-        "app.rag.retrieval.service.OpenAIEmbeddingProvider.from_settings",
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
         lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
     )
 

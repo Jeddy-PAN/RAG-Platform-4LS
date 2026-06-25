@@ -29,7 +29,7 @@ def test_chat_api_creates_conversation_messages_and_citations(
         project_id = project.id
 
     monkeypatch.setattr(
-        "app.rag.retrieval.service.OpenAIEmbeddingProvider.from_settings",
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
         lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
     )
     monkeypatch.setattr(

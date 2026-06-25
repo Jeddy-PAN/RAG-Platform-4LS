@@ -40,7 +40,7 @@ def test_retrieval_api_returns_debug_fields(api_client, sqlite_session_factory, 
 
     project_id = seed_chunk(sqlite_session_factory)
     monkeypatch.setattr(
-        "app.rag.retrieval.service.OpenAIEmbeddingProvider.from_settings",
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
         lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
     )
 
@@ -81,7 +81,7 @@ def test_vector_retrieval_embeds_query_once(api_client, sqlite_session_factory, 
             return [[0.1] * 1024]
 
     monkeypatch.setattr(
-        "app.rag.retrieval.service.OpenAIEmbeddingProvider.from_settings",
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
         lambda: Provider(),
     )
 
@@ -107,7 +107,7 @@ def test_keyword_retrieval_does_not_use_embedding_provider(
         raise AssertionError("embedding provider should not be used")
 
     monkeypatch.setattr(
-        "app.rag.retrieval.service.OpenAIEmbeddingProvider.from_settings",
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
         fail_if_called,
     )
 
@@ -135,7 +135,7 @@ def test_embedding_provider_failure_returns_503(
             raise EmbeddingProviderError("embedding unavailable")
 
     monkeypatch.setattr(
-        "app.rag.retrieval.service.OpenAIEmbeddingProvider.from_settings",
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
         lambda: Provider(),
     )
 

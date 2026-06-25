@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.models.project import Project
 from app.models.retrieval import RetrievalMode
-from app.rag.providers.embeddings import EmbeddingProviderError, OpenAIEmbeddingProvider
+from app.rag.providers.embeddings import (
+    EmbeddingProviderError,
+    get_embedding_provider_from_settings,
+)
 from app.rag.providers.types import EmbeddingProvider
 from app.rag.retrieval.hybrid import fuse_retrieval_results
 from app.rag.retrieval.keyword import retrieve_keyword
@@ -36,7 +39,7 @@ def run_retrieval(
         if mode == RetrievalMode.keyword:
             results = retrieve_keyword(db, project_id, query, top_k)
         elif mode == RetrievalMode.vector:
-            provider = embedding_provider or OpenAIEmbeddingProvider.from_settings()
+            provider = embedding_provider or get_embedding_provider_from_settings()
             query_embedding = provider.embed_texts([query])[0]
             results = retrieve_vector(
                 db,
@@ -46,7 +49,7 @@ def run_retrieval(
                 similarity_threshold=similarity_threshold,
             )
         else:
-            provider = embedding_provider or OpenAIEmbeddingProvider.from_settings()
+            provider = embedding_provider or get_embedding_provider_from_settings()
             query_embedding = provider.embed_texts([query])[0]
             candidate_limit = max(top_k * 3, 20)
             vector_results = retrieve_vector(

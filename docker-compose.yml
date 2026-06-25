@@ -36,10 +36,10 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.example.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-example-chat-model}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai_compatible}
-      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api.example.com/v1}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:11434}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-example-embedding-model}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-m3}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
       UPLOAD_STORAGE_DIR: ${UPLOAD_STORAGE_DIR:-data/uploads}
       MAX_UPLOAD_SIZE_BYTES: ${MAX_UPLOAD_SIZE_BYTES:-52428800}
@@ -74,10 +74,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://rag:rag@postgres:5432/rag}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       RQ_QUEUE_NAME: ${RQ_QUEUE_NAME:-default}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai_compatible}
-      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api.example.com/v1}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://host.docker.internal:11434}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-example-embedding-model}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-m3}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
       UPLOAD_STORAGE_DIR: ${UPLOAD_STORAGE_DIR:-data/uploads}
     depends_on:
