@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     environment: str = Field(default="local")
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
+    cors_allow_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
+    )
 
     database_url: str = Field(
         default="postgresql+psycopg://rag:rag@postgres:5432/rag"
