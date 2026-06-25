@@ -60,7 +60,9 @@ def test_chunk_queries_are_isolated_by_project_id(migrated_engine) -> None:
         project_b_chunks = session.scalars(
             select(Chunk).where(Chunk.project_id == project_b.id)
         ).all()
-        unscoped_chunks = session.scalars(select(Chunk)).all()
+        unscoped_chunks = session.scalars(
+            select(Chunk).where(Chunk.document_id.in_([document_a.id, document_b.id]))
+        ).all()
 
     assert [chunk.text for chunk in project_a_chunks] == ["alpha only knowledge"]
     assert [chunk.text for chunk in project_b_chunks] == ["beta only knowledge"]
