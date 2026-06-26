@@ -2,6 +2,9 @@ import type {
   ChatMessageResponse,
   DocumentItem,
   DocumentUploadResponse,
+  EvalDataset,
+  EvalQuestion,
+  EvalRun,
   IngestionJob,
   FeedbackRating,
   FeedbackResponse,
@@ -140,6 +143,46 @@ export const retrievalApi = {
       similarity_threshold: number;
     }
   ) => jsonRequest<RetrievalResponse>(`/api/projects/${projectId}/retrieval/query`, "POST", payload)
+};
+
+export const evalApi = {
+  listDatasets: (projectId: UUID) =>
+    request<EvalDataset[]>(`/api/projects/${projectId}/eval/datasets`),
+  createDataset: (
+    projectId: UUID,
+    payload: { name: string; description?: string | null }
+  ) => jsonRequest<EvalDataset>(`/api/projects/${projectId}/eval/datasets`, "POST", payload),
+  createQuestion: (
+    projectId: UUID,
+    datasetId: UUID,
+    payload: {
+      question: string;
+      expected_document_id?: UUID | null;
+      expected_chunk_id?: UUID | null;
+      expected_answer_notes?: string | null;
+      should_answer?: boolean;
+    }
+  ) =>
+    jsonRequest<EvalQuestion>(
+      `/api/projects/${projectId}/eval/datasets/${datasetId}/questions`,
+      "POST",
+      payload
+    ),
+  runDataset: (
+    projectId: UUID,
+    datasetId: UUID,
+    payload: {
+      retrieval_mode: RetrievalMode;
+      top_k: number;
+      vector_weight: number;
+      keyword_weight: number;
+    }
+  ) =>
+    jsonRequest<EvalRun>(
+      `/api/projects/${projectId}/eval/datasets/${datasetId}/runs`,
+      "POST",
+      payload
+    )
 };
 
 export const systemApi = {

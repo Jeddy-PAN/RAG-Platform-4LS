@@ -108,6 +108,58 @@ export type RetrievalResponse = {
   retrieval_log_id: UUID;
 };
 
+export type EvalDataset = {
+  id: UUID;
+  project_id: UUID;
+  name: string;
+  description: string | null;
+  question_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EvalQuestion = {
+  id: UUID;
+  project_id: UUID;
+  dataset_id: UUID;
+  question: string;
+  expected_document_id: UUID | null;
+  expected_chunk_id: UUID | null;
+  expected_answer_notes: string | null;
+  should_answer: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EvalResult = {
+  id: UUID;
+  question_id: UUID;
+  question: string;
+  answer: string | null;
+  hit: boolean;
+  citation_covered: boolean;
+  refused: boolean;
+  answer_matched: boolean;
+  retrieval_latency_ms: number | null;
+  generation_latency_ms: number | null;
+  score: number | null;
+  result_metadata: Record<string, unknown>;
+};
+
+export type EvalRun = {
+  id: UUID;
+  project_id: UUID;
+  dataset_id: UUID;
+  status: "queued" | "running" | "completed" | "failed";
+  retrieval_mode: RetrievalMode;
+  top_k: number;
+  metrics: Record<string, number>;
+  error_message: string | null;
+  results: EvalResult[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type SystemConfig = {
   llm: {
     provider: string;

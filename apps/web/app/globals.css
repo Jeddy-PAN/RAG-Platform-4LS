@@ -360,8 +360,7 @@ a {
 
 .file-tree-hint,
 .sidebar-empty,
-.loading-state,
-.retrieval-empty {
+.loading-state {
   margin: 12px 8px;
   color: var(--muted);
   font-size: 13px;
@@ -651,11 +650,16 @@ h1 {
   background: var(--accent-soft);
 }
 
-.retrieval-fab {
+.tool-fab-group {
   position: absolute;
   right: 24px;
   bottom: 24px;
   z-index: 5;
+  display: flex;
+  gap: 8px;
+}
+
+.retrieval-fab {
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -679,14 +683,14 @@ h1 {
   font-size: 13px;
 }
 
-.retrieval-page {
+.tool-page {
   min-height: 100dvh;
   width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
   padding: 28px 0;
 }
 
-.retrieval-header {
+.tool-page .retrieval-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -694,7 +698,7 @@ h1 {
   margin-bottom: 24px;
 }
 
-.retrieval-header a {
+.tool-page .retrieval-header a {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -706,29 +710,29 @@ h1 {
   font-weight: 800;
 }
 
-.retrieval-layout {
+.tool-page .retrieval-layout {
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
 
-.retrieval-controls,
-.retrieval-results,
-.retrieval-empty {
+.tool-page .retrieval-controls,
+.tool-page .retrieval-results,
+.tool-page .retrieval-empty {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
 }
 
-.retrieval-controls {
+.tool-page .retrieval-controls {
   display: grid;
   gap: 14px;
   padding: 16px;
 }
 
-.retrieval-controls label {
+.tool-page .retrieval-controls label {
   display: grid;
   gap: 7px;
   color: var(--muted-strong);
@@ -736,23 +740,27 @@ h1 {
   font-weight: 750;
 }
 
-.retrieval-controls textarea,
-.retrieval-controls input,
-.retrieval-controls select {
+.tool-page .retrieval-controls textarea,
+.tool-page .retrieval-controls input,
+.tool-page .retrieval-controls select {
   padding: 10px;
 }
 
-.retrieval-grid {
+.tool-page .retrieval-grid {
   display: grid;
   grid-template-columns: 1fr 96px;
   gap: 10px;
 }
 
-.retrieval-empty {
+.tool-page .retrieval-empty {
   padding: 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-.retrieval-results {
+.tool-page .retrieval-results {
   overflow: hidden;
 }
 
@@ -793,6 +801,39 @@ h1 {
   line-height: 1.55;
 }
 
+.eval-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.eval-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+
+.eval-metrics div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-right: 1px solid var(--border);
+}
+
+.eval-metrics div:last-child {
+  border-right: 0;
+}
+
+.eval-metrics span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.eval-metrics strong {
+  font-size: 20px;
+}
+
 @media (max-width: 860px) {
   .app-shell {
     grid-template-rows: auto 1fr;
@@ -806,7 +847,7 @@ h1 {
   }
 
   .workbench-layout,
-  .retrieval-layout {
+  .tool-page .retrieval-layout {
     grid-template-columns: 1fr;
   }
 
@@ -854,8 +895,12 @@ h1 {
     justify-content: space-between;
   }
 
-  .retrieval-fab {
+  .tool-fab-group {
     right: 14px;
     bottom: 14px;
+  }
+
+  .eval-metrics {
+    grid-template-columns: 1fr 1fr;
   }
 }

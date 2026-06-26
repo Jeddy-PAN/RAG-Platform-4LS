@@ -1,7 +1,12 @@
 export function RetrievalFloatingButton() {
   return (
-    <a className="retrieval-fab" href="/retrieval">
-      Retrieval Playground
-    </a>
+    <div className="tool-fab-group">
+      <a className="retrieval-fab" href="/retrieval">
+        Retrieval
+      </a>
+      <a className="retrieval-fab" href="/eval">
+        Eval
+      </a>
+    </div>
   );
 }

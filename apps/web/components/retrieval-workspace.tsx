@@ -56,7 +56,7 @@ export function RetrievalWorkspace() {
   }
 
   return (
-    <main className="retrieval-page">
+    <main className="tool-page retrieval-page">
       <header className="retrieval-header">
         <a href="/">Back to workbench</a>
         <div>
