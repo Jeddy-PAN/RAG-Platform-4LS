@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { chatApi, documentsApi, feedbackApi, projectsApi } from "@/lib/api";
+import { chatApi, documentsApi, feedbackApi, projectsApi, systemApi } from "@/lib/api";
 import type {
   ChatMessage,
   DocumentItem,
   FeedbackRating,
   Project,
+  SystemConfig,
   UUID
 } from "@/lib/types";
 import { ChatWorkspace } from "./chat-workspace";
@@ -31,6 +32,7 @@ export function WorkbenchShell() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
   const [sidebarError, setSidebarError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
 
@@ -41,6 +43,7 @@ export function WorkbenchShell() {
 
   useEffect(() => {
     void loadProjects();
+    void loadSystemConfig();
   }, []);
 
   useEffect(() => {
@@ -71,6 +74,14 @@ export function WorkbenchShell() {
       setSidebarError(error instanceof Error ? error.message : "Unable to load projects");
     } finally {
       setIsLoadingProjects(false);
+    }
+  }
+
+  async function loadSystemConfig() {
+    try {
+      setSystemConfig(await systemApi.config());
+    } catch {
+      setSystemConfig(null);
     }
   }
 
@@ -258,7 +269,7 @@ export function WorkbenchShell() {
 
   return (
     <div className="app-shell">
-      <TopBar activeProject={activeProject} />
+      <TopBar activeProject={activeProject} systemConfig={systemConfig} />
       <div className="workbench-layout">
         <ProjectSidebar
           activeProjectId={activeProjectId}

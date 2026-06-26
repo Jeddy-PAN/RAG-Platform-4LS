@@ -1,10 +1,11 @@
-import type { Project } from "@/lib/types";
+import type { Project, SystemConfig } from "@/lib/types";
 
 type TopBarProps = {
   activeProject: Project | null;
+  systemConfig: SystemConfig | null;
 };
 
-export function TopBar({ activeProject }: TopBarProps) {
+export function TopBar({ activeProject, systemConfig }: TopBarProps) {
   return (
     <header className="top-bar">
       <a className="brand" href="/">
@@ -12,6 +13,12 @@ export function TopBar({ activeProject }: TopBarProps) {
         <span>Local RAG Workbench</span>
       </a>
       <div className="top-bar-status">
+        {systemConfig ? (
+          <span className="provider-status">
+            Emb {systemConfig.embedding.provider}:{systemConfig.embedding.model}
+            <span>Chat {systemConfig.llm.model}</span>
+          </span>
+        ) : null}
         {activeProject ? (
           <>
             <span className="muted">Active project</span>

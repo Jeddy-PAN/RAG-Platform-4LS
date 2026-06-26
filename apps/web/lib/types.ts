@@ -107,3 +107,19 @@ export type RetrievalResponse = {
   results: RetrievalResult[];
   retrieval_log_id: UUID;
 };
+
+export type SystemConfig = {
+  llm: {
+    provider: string;
+    base_url: string;
+    model: string;
+    api_key_configured: boolean;
+  };
+  embedding: {
+    provider: string;
+    base_url: string;
+    model: string;
+    dimensions: number;
+    api_key_configured: boolean;
+  };
+};

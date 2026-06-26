@@ -8,6 +8,7 @@ from app.api.feedback import router as feedback_router
 from app.api.health import router as health_router
 from app.api.projects import router as projects_router
 from app.api.retrieval import router as retrieval_router
+from app.api.system import router as system_router
 from app.core.config import get_settings
 
 
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(conversations_router)
     app.include_router(feedback_router)
+    app.include_router(system_router)
     return app
 
 

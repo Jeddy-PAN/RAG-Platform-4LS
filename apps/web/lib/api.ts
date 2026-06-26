@@ -7,6 +7,7 @@ import type {
   Project,
   RetrievalMode,
   RetrievalResponse,
+  SystemConfig,
   UUID
 } from "./types";
 
@@ -129,4 +130,8 @@ export const retrievalApi = {
       similarity_threshold: number;
     }
   ) => jsonRequest<RetrievalResponse>(`/api/projects/${projectId}/retrieval/query`, "POST", payload)
+};
+
+export const systemApi = {
+  config: () => request<SystemConfig>("/api/system/config")
 };
