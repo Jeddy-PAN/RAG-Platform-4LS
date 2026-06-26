@@ -834,6 +834,59 @@ h1 {
   font-size: 20px;
 }
 
+.eval-run-history {
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.eval-run-list {
+  display: grid;
+}
+
+.eval-run-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  background: transparent;
+  text-align: left;
+}
+
+.eval-run-list button:last-child {
+  border-bottom: 0;
+}
+
+.eval-run-list button.active,
+.eval-run-list button:hover {
+  background: var(--accent-soft);
+}
+
+.eval-run-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.eval-run-list strong {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.eval-run-list small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 @media (max-width: 860px) {
   .app-shell {
     grid-template-rows: auto 1fr;

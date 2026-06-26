@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { evalApi, projectsApi } from "@/lib/api";
-import type { EvalDataset, EvalRun, Project, RetrievalMode, UUID } from "@/lib/types";
+import type {
+  EvalDataset,
+  EvalRun,
+  EvalRunSummary,
+  Project,
+  RetrievalMode,
+  UUID
+} from "@/lib/types";
 import { ErrorState } from "./error-state";
 
 function formatRate(value: number | undefined) {
@@ -31,8 +38,10 @@ export function EvalWorkspace() {
   const [expectedChunkId, setExpectedChunkId] = useState("");
   const [mode, setMode] = useState<RetrievalMode>("hybrid");
   const [topK, setTopK] = useState(8);
+  const [runs, setRuns] = useState<EvalRunSummary[]>([]);
   const [run, setRun] = useState<EvalRun | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [isLoadingRun, setIsLoadingRun] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedDataset = useMemo(
@@ -73,10 +82,32 @@ export function EvalWorkspace() {
     }
   }, [selectedProjectId]);
 
+  useEffect(() => {
+    async function loadRuns(projectId: UUID, datasetId: UUID) {
+      try {
+        const runList = await evalApi.listRuns(projectId, datasetId);
+        setRuns(runList);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Unable to load eval runs");
+      }
+    }
+
+    setRun(null);
+    setRuns([]);
+    if (selectedProjectId && selectedDatasetId) {
+      void loadRuns(selectedProjectId, selectedDatasetId);
+    }
+  }, [selectedProjectId, selectedDatasetId]);
+
   async function refreshDatasets(projectId: UUID, nextDatasetId?: UUID) {
     const datasetList = await evalApi.listDatasets(projectId);
     setDatasets(datasetList);
     setSelectedDatasetId(nextDatasetId ?? datasetList[0]?.id ?? "");
+  }
+
+  async function refreshRuns(projectId: UUID, datasetId: UUID) {
+    const runList = await evalApi.listRuns(projectId, datasetId);
+    setRuns(runList);
   }
 
   async function createDataset() {
@@ -136,10 +167,28 @@ export function EvalWorkspace() {
         keyword_weight: 0.35
       });
       setRun(result);
+      await refreshRuns(selectedProjectId, selectedDatasetId);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Eval run failed");
     } finally {
       setIsRunning(false);
+    }
+  }
+
+  async function loadRunDetail(runId: UUID) {
+    if (!selectedProjectId || !selectedDatasetId) {
+      return;
+    }
+
+    setIsLoadingRun(true);
+    setError(null);
+    try {
+      const result = await evalApi.getRun(selectedProjectId, selectedDatasetId, runId);
+      setRun(result);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load eval run");
+    } finally {
+      setIsLoadingRun(false);
     }
   }
 
@@ -276,6 +325,33 @@ export function EvalWorkspace() {
 
         <div>
           {error ? <ErrorState message={error} /> : null}
+          {runs.length > 0 ? (
+            <section className="eval-run-history">
+              <div className="retrieval-summary">
+                <strong>Recent runs</strong>
+                <span>{runs.length}</span>
+              </div>
+              <div className="eval-run-list">
+                {runs.map((item) => (
+                  <button
+                    className={run?.id === item.id ? "active" : ""}
+                    disabled={isLoadingRun}
+                    key={item.id}
+                    onClick={() => loadRunDetail(item.id)}
+                    type="button"
+                  >
+                    <span>
+                      {item.retrieval_mode} · top {item.top_k}
+                    </span>
+                    <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
+                    <small>
+                      {item.status} · {item.result_count} results
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
           {!run ? (
             <section className="retrieval-empty">
               Select or create a dataset, add questions, then run eval.

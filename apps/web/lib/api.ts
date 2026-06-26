@@ -5,6 +5,7 @@ import type {
   EvalDataset,
   EvalQuestion,
   EvalRun,
+  EvalRunSummary,
   IngestionJob,
   FeedbackRating,
   FeedbackResponse,
@@ -182,7 +183,11 @@ export const evalApi = {
       `/api/projects/${projectId}/eval/datasets/${datasetId}/runs`,
       "POST",
       payload
-    )
+    ),
+  listRuns: (projectId: UUID, datasetId: UUID) =>
+    request<EvalRunSummary[]>(`/api/projects/${projectId}/eval/datasets/${datasetId}/runs`),
+  getRun: (projectId: UUID, datasetId: UUID, runId: UUID) =>
+    request<EvalRun>(`/api/projects/${projectId}/eval/datasets/${datasetId}/runs/${runId}`)
 };
 
 export const systemApi = {

@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.chunk import Chunk
 from app.models.document import Document
@@ -40,6 +40,31 @@ def _get_dataset(db: Session, project_id: uuid.UUID, dataset_id: uuid.UUID) -> E
             detail="Eval dataset not found",
         )
     return dataset
+
+
+def _get_run(
+    db: Session,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> EvalRun:
+    """Fetch a same-project eval run with results or raise HTTP 404."""
+
+    run = db.scalar(
+        select(EvalRun)
+        .options(selectinload(EvalRun.results))
+        .where(
+            EvalRun.id == run_id,
+            EvalRun.project_id == project_id,
+            EvalRun.dataset_id == dataset_id,
+        )
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Eval run not found",
+        )
+    return run
 
 
 def _question_count(db: Session, dataset_id: uuid.UUID) -> int:
@@ -94,6 +119,47 @@ def list_datasets(db: Session, project_id: uuid.UUID) -> list[dict]:
         dataset_to_read(dataset, question_count=_question_count(db, dataset.id))
         for dataset in datasets
     ]
+
+
+def list_runs(db: Session, project_id: uuid.UUID, dataset_id: uuid.UUID) -> list[dict]:
+    """List eval runs for a dataset without loading full result details."""
+
+    _get_dataset(db, project_id, dataset_id)
+    rows = db.execute(
+        select(EvalRun, func.count(EvalResult.id))
+        .outerjoin(EvalResult, EvalResult.run_id == EvalRun.id)
+        .where(EvalRun.project_id == project_id, EvalRun.dataset_id == dataset_id)
+        .group_by(EvalRun.id)
+        .order_by(EvalRun.created_at.desc())
+    ).all()
+    return [
+        {
+            "id": run.id,
+            "project_id": run.project_id,
+            "dataset_id": run.dataset_id,
+            "status": run.status,
+            "retrieval_mode": run.retrieval_mode,
+            "top_k": run.top_k,
+            "metrics": run.metrics,
+            "error_message": run.error_message,
+            "result_count": result_count,
+            "created_at": run.created_at,
+            "updated_at": run.updated_at,
+        }
+        for run, result_count in rows
+    ]
+
+
+def get_run(
+    db: Session,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> EvalRun:
+    """Fetch one eval run detail."""
+
+    _get_dataset(db, project_id, dataset_id)
+    return _get_run(db, project_id, dataset_id, run_id)
 
 
 def create_question(

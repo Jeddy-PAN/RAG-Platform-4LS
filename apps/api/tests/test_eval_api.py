@@ -136,6 +136,85 @@ def test_eval_api_runs_dataset_and_records_metrics(
         assert db.query(EvalResult).count() == 1
 
 
+def test_eval_api_lists_and_gets_run_history(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Eval API should expose run history and per-run details."""
+
+    with sqlite_session_factory() as db:
+        project, document, chunk = seed_retrieval_chunk(
+            db,
+            "eval-history",
+            "Google Sycamore claimed quantum supremacy in 2019.",
+            [0.1] * 1024,
+        )
+        other_project, _, _ = seed_retrieval_chunk(
+            db,
+            "eval-history-other",
+            "Other project content.",
+            [0.2] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+        other_project_id = other_project.id
+        document_id = document.id
+        chunk_id = chunk.id
+
+    dataset = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets",
+        json={"name": "History Eval"},
+    ).json()
+    api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={
+            "question": "What did Google Sycamore claim in 2019?",
+            "expected_document_id": str(document_id),
+            "expected_chunk_id": str(chunk_id),
+            "expected_answer_notes": "quantum supremacy",
+        },
+    )
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: FakeEvalChatProvider(),
+    )
+
+    first_run = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={"retrieval_mode": "hybrid", "top_k": 3},
+    ).json()
+    second_run = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={"retrieval_mode": "keyword", "top_k": 5},
+    ).json()
+
+    list_response = api_client.get(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs"
+    )
+    detail_response = api_client.get(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs/{second_run['id']}"
+    )
+    cross_project_response = api_client.get(
+        f"/api/projects/{other_project_id}/eval/datasets/{dataset['id']}/runs/{first_run['id']}"
+    )
+
+    assert list_response.status_code == 200
+    runs = list_response.json()
+    assert {run["id"] for run in runs} == {second_run["id"], first_run["id"]}
+    assert runs[0]["result_count"] == 1
+    assert "results" not in runs[0]
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["id"] == second_run["id"]
+    assert detail["results"][0]["question"] == "What did Google Sycamore claim in 2019?"
+    assert cross_project_response.status_code == 404
+
+
 def test_eval_api_rejects_empty_dataset_run(api_client, sqlite_session_factory) -> None:
     """Eval runner should reject datasets without questions."""
 

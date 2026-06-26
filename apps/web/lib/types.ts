@@ -160,6 +160,10 @@ export type EvalRun = {
   updated_at: string;
 };
 
+export type EvalRunSummary = Omit<EvalRun, "results"> & {
+  result_count: number;
+};
+
 export type SystemConfig = {
   llm: {
     provider: string;

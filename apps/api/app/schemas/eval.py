@@ -114,6 +114,24 @@ class EvalResultRead(BaseModel):
     result_metadata: dict
 
 
+class EvalRunSummaryRead(BaseModel):
+    """Eval run summary without per-question results."""
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    dataset_id: uuid.UUID
+    status: EvalRunStatus
+    retrieval_mode: str
+    top_k: int
+    metrics: dict
+    error_message: str | None
+    result_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class EvalRunRead(BaseModel):
     """Eval run with aggregate metrics and per-question results."""
 

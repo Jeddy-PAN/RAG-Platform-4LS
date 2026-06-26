@@ -12,11 +12,46 @@ from app.schemas.eval import (
     EvalResultRead,
     EvalRunCreate,
     EvalRunRead,
+    EvalRunSummaryRead,
 )
 from app.services import eval as eval_service
 
 
 router = APIRouter(prefix="/api/projects/{project_id}/eval", tags=["eval"])
+
+
+def run_to_read(run) -> EvalRunRead:
+    """Map an eval run ORM object to an API response."""
+
+    return EvalRunRead(
+        id=run.id,
+        project_id=run.project_id,
+        dataset_id=run.dataset_id,
+        status=run.status,
+        retrieval_mode=run.retrieval_mode,
+        top_k=run.top_k,
+        metrics=run.metrics,
+        error_message=run.error_message,
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+        results=[
+            EvalResultRead(
+                id=result.id,
+                question_id=result.question_id,
+                question=str(result.result_metadata.get("question", "")),
+                answer=result.answer,
+                hit=result.hit,
+                citation_covered=result.citation_covered,
+                refused=result.refused,
+                answer_matched=bool(result.result_metadata.get("answer_matched")),
+                retrieval_latency_ms=result.retrieval_latency_ms,
+                generation_latency_ms=result.generation_latency_ms,
+                score=result.score,
+                result_metadata=result.result_metadata,
+            )
+            for result in run.results
+        ],
+    )
 
 
 @router.post(
@@ -57,6 +92,35 @@ def create_question(
     return eval_service.create_question(db, project_id, dataset_id, payload)
 
 
+@router.get(
+    "/datasets/{dataset_id}/runs",
+    response_model=list[EvalRunSummaryRead],
+)
+def list_runs(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """List eval runs for one dataset."""
+
+    return eval_service.list_runs(db, project_id, dataset_id)
+
+
+@router.get(
+    "/datasets/{dataset_id}/runs/{run_id}",
+    response_model=EvalRunRead,
+)
+def get_run(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    run_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> EvalRunRead:
+    """Fetch one eval run with per-question results."""
+
+    return run_to_read(eval_service.get_run(db, project_id, dataset_id, run_id))
+
+
 @router.post(
     "/datasets/{dataset_id}/runs",
     response_model=EvalRunRead,
@@ -71,32 +135,4 @@ def run_dataset(
     """Run a synchronous eval for one dataset."""
 
     run = eval_service.run_dataset(db, project_id, dataset_id, payload)
-    return EvalRunRead(
-        id=run.id,
-        project_id=run.project_id,
-        dataset_id=run.dataset_id,
-        status=run.status,
-        retrieval_mode=run.retrieval_mode,
-        top_k=run.top_k,
-        metrics=run.metrics,
-        error_message=run.error_message,
-        created_at=run.created_at,
-        updated_at=run.updated_at,
-        results=[
-            EvalResultRead(
-                id=result.id,
-                question_id=result.question_id,
-                question=str(result.result_metadata.get("question", "")),
-                answer=result.answer,
-                hit=result.hit,
-                citation_covered=result.citation_covered,
-                refused=result.refused,
-                answer_matched=bool(result.result_metadata.get("answer_matched")),
-                retrieval_latency_ms=result.retrieval_latency_ms,
-                generation_latency_ms=result.generation_latency_ms,
-                score=result.score,
-                result_metadata=result.result_metadata,
-            )
-            for result in run.results
-        ],
-    )
+    return run_to_read(run)
