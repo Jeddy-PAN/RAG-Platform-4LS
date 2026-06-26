@@ -198,6 +198,7 @@ a {
 
 .icon-button,
 .text-button,
+.mini-button,
 .secondary-button,
 .message-composer button,
 .retrieval-controls button,
@@ -218,6 +219,7 @@ a {
 
 .icon-button.active,
 .icon-button:hover,
+.mini-button:hover,
 .secondary-button:hover,
 .text-button:hover {
   border-color: rgba(36, 91, 219, 0.34);
@@ -232,11 +234,18 @@ a {
 }
 
 .text-button,
+.mini-button,
 .secondary-button,
 .feedback-controls button {
   padding: 0 10px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.mini-button {
+  min-height: 26px;
+  border-radius: 7px;
+  color: var(--muted-strong);
 }
 
 .danger {
@@ -315,16 +324,38 @@ a {
 
 .file-row {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   padding: 7px 8px;
   color: var(--muted-strong);
   font-size: 12px;
+}
+
+.file-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
 }
 
 .file-meta {
   display: flex;
   align-items: center;
   gap: 7px;
+}
+
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.file-error {
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(180, 35, 24, 0.16);
+  border-radius: 8px;
+  color: var(--danger);
+  background: rgba(180, 35, 24, 0.06);
+  line-height: 1.35;
 }
 
 .file-tree-hint,
@@ -487,6 +518,7 @@ h1 {
 .retrieval-controls input:focus,
 .retrieval-controls select:focus,
 .icon-button:focus-visible,
+.mini-button:focus-visible,
 .text-button:focus-visible,
 .secondary-button:focus-visible,
 .project-select:focus-visible,

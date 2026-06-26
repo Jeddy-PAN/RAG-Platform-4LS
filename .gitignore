@@ -28,6 +28,7 @@ coverage/
 data/
 uploads/
 tmp/
+local_tests/
 
 # OS / editors
 .DS_Store

@@ -68,3 +68,17 @@ def test_chat_provider_errors_are_clear() -> None:
 
     with pytest.raises(ChatProviderError, match="Chat API request failed"):
         provider.generate_chat_completion([{"role": "user", "content": "Question"}])
+
+
+def test_chat_provider_error_includes_http_status() -> None:
+    """Provider errors should include upstream status when available."""
+
+    provider = OpenAIChatProvider(
+        base_url="https://example.test/v1",
+        api_key="secret",
+        model="chat-model",
+        client=FakeHttpClient(FakeResponse({}, status_code=402)),
+    )
+
+    with pytest.raises(ChatProviderError, match="402"):
+        provider.generate_chat_completion([{"role": "user", "content": "Question"}])

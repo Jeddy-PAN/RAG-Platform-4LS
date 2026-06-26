@@ -9,12 +9,16 @@ type ProjectSidebarProps = {
   projects: Project[];
   documentsByProject: Record<UUID, DocumentItem[]>;
   activeProjectId: UUID | null;
+  busyDocumentIds: Set<UUID>;
   expandedProjectIds: Set<UUID>;
   editMode: boolean;
   isLoadingProjects: boolean;
   isUploading: boolean;
   loadingDocuments: Set<UUID>;
   error: string | null;
+  onDeleteDocument: (projectId: UUID, document: DocumentItem) => void;
+  onRefreshDocuments: (projectId: UUID) => void;
+  onReindexDocument: (projectId: UUID, document: DocumentItem) => void;
   onCreateProject: () => void;
   onToggleEditMode: () => void;
   onSelectProject: (projectId: UUID) => void;
@@ -28,12 +32,16 @@ export function ProjectSidebar({
   projects,
   documentsByProject,
   activeProjectId,
+  busyDocumentIds,
   expandedProjectIds,
   editMode,
   isLoadingProjects,
   isUploading,
   loadingDocuments,
   error,
+  onDeleteDocument,
+  onRefreshDocuments,
+  onReindexDocument,
   onCreateProject,
   onToggleEditMode,
   onSelectProject,
@@ -67,11 +75,15 @@ export function ProjectSidebar({
         {error ? <ErrorState message={error} /> : null}
         <ProjectList
           activeProjectId={activeProjectId}
+          busyDocumentIds={busyDocumentIds}
           documentsByProject={documentsByProject}
           editMode={editMode}
           expandedProjectIds={expandedProjectIds}
           loading={isLoadingProjects}
           loadingDocuments={loadingDocuments}
+          onDeleteDocument={onDeleteDocument}
+          onRefreshDocuments={onRefreshDocuments}
+          onReindexDocument={onReindexDocument}
           onDeleteProject={onDeleteProject}
           onRenameProject={onRenameProject}
           onSelectProject={onSelectProject}

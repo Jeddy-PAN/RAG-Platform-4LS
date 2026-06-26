@@ -25,6 +25,7 @@ export function WorkbenchShell() {
   const [documentsByProject, setDocumentsByProject] = useState<Record<UUID, DocumentItem[]>>({});
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<UUID>>(new Set());
   const [loadingDocuments, setLoadingDocuments] = useState<Set<UUID>>(new Set());
+  const [busyDocumentIds, setBusyDocumentIds] = useState<Set<UUID>>(new Set());
   const [activeProjectId, setActiveProjectId] = useState<UUID | null>(null);
   const [conversationId, setConversationId] = useState<UUID | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -47,16 +48,21 @@ export function WorkbenchShell() {
   }, []);
 
   useEffect(() => {
-    if (!activeProjectId || !hasPendingDocuments(documentsByProject[activeProjectId])) {
+    const projectIdsToPoll = [...expandedProjectIds].filter((projectId) =>
+      hasPendingDocuments(documentsByProject[projectId])
+    );
+    if (projectIdsToPoll.length === 0) {
       return;
     }
 
     const intervalId = window.setInterval(() => {
-      void loadDocuments(activeProjectId, { silent: true });
+      for (const projectId of projectIdsToPoll) {
+        void loadDocuments(projectId, { silent: true });
+      }
     }, DOCUMENT_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [activeProjectId, documentsByProject]);
+  }, [documentsByProject, expandedProjectIds]);
 
   async function loadProjects() {
     setIsLoadingProjects(true);
@@ -208,6 +214,52 @@ export function WorkbenchShell() {
     }
   }
 
+  async function handleRefreshDocuments(projectId: UUID) {
+    await loadDocuments(projectId);
+  }
+
+  async function handleReindexDocument(projectId: UUID, document: DocumentItem) {
+    setBusyDocumentIds((current) => new Set(current).add(document.id));
+    setSidebarError(null);
+    try {
+      await documentsApi.reindex(projectId, document.id);
+      await loadDocuments(projectId);
+      setExpandedProjectIds((current) => new Set(current).add(projectId));
+    } catch (error) {
+      setSidebarError(error instanceof Error ? error.message : "Unable to reindex document");
+    } finally {
+      setBusyDocumentIds((current) => {
+        const next = new Set(current);
+        next.delete(document.id);
+        return next;
+      });
+    }
+  }
+
+  async function handleDeleteDocument(projectId: UUID, document: DocumentItem) {
+    if (!window.confirm(`Delete file "${document.filename}"?`)) {
+      return;
+    }
+
+    setBusyDocumentIds((current) => new Set(current).add(document.id));
+    setSidebarError(null);
+    try {
+      await documentsApi.delete(projectId, document.id);
+      setDocumentsByProject((current) => ({
+        ...current,
+        [projectId]: (current[projectId] ?? []).filter((item) => item.id !== document.id)
+      }));
+    } catch (error) {
+      setSidebarError(error instanceof Error ? error.message : "Unable to delete document");
+    } finally {
+      setBusyDocumentIds((current) => {
+        const next = new Set(current);
+        next.delete(document.id);
+        return next;
+      });
+    }
+  }
+
   async function handleSend(message: string) {
     if (!activeProjectId) {
       return;
@@ -273,6 +325,7 @@ export function WorkbenchShell() {
       <div className="workbench-layout">
         <ProjectSidebar
           activeProjectId={activeProjectId}
+          busyDocumentIds={busyDocumentIds}
           documentsByProject={documentsByProject}
           editMode={editMode}
           error={sidebarError}
@@ -281,7 +334,10 @@ export function WorkbenchShell() {
           isUploading={isUploading}
           loadingDocuments={loadingDocuments}
           onCreateProject={handleCreateProject}
+          onDeleteDocument={handleDeleteDocument}
           onDeleteProject={handleDeleteProject}
+          onRefreshDocuments={handleRefreshDocuments}
+          onReindexDocument={handleReindexDocument}
           onRenameProject={handleRenameProject}
           onSelectProject={handleSelectProject}
           onToggleEditMode={() => setEditMode((value) => !value)}

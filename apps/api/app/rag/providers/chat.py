@@ -64,6 +64,10 @@ class OpenAIChatProvider:
             payload = response.json()
             content = payload["choices"][0]["message"]["content"]
         except Exception as exc:
-            raise ChatProviderError("Chat API request failed") from exc
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code is None:
+                status_code = getattr(response, "status_code", None) if "response" in locals() else None
+            detail = f": {status_code}" if status_code else ""
+            raise ChatProviderError(f"Chat API request failed{detail}") from exc
 
         return ChatProviderResult(content=content, model=payload.get("model", self.model))

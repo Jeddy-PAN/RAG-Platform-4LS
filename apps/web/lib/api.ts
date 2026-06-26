@@ -2,6 +2,7 @@ import type {
   ChatMessageResponse,
   DocumentItem,
   DocumentUploadResponse,
+  IngestionJob,
   FeedbackRating,
   FeedbackResponse,
   Project,
@@ -87,7 +88,16 @@ export const documentsApi = {
       method: "POST",
       body: formData
     });
-  }
+  },
+  delete: async (projectId: UUID, documentId: UUID) => {
+    await request<void>(`/api/projects/${projectId}/documents/${documentId}`, {
+      method: "DELETE"
+    });
+  },
+  reindex: (projectId: UUID, documentId: UUID) =>
+    request<IngestionJob>(`/api/projects/${projectId}/documents/${documentId}/reindex`, {
+      method: "POST"
+    })
 };
 
 export const chatApi = {
