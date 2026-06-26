@@ -13,6 +13,16 @@ class FakeEvalChatProvider:
         )
 
 
+class FakeNoAnswerChatProvider:
+    def generate_chat_completion(self, messages, temperature=0.1):
+        """Return a deterministic Chinese no-answer response."""
+
+        return ChatProviderResult(
+            content="根据所提供的知识库内容，无法说明公司本季度的销售收入。",
+            model="fake-no-answer-chat",
+        )
+
+
 def test_eval_api_creates_dataset_and_question(api_client, sqlite_session_factory) -> None:
     """Eval API should create project-scoped datasets and questions."""
 
@@ -151,3 +161,50 @@ def test_eval_api_rejects_empty_dataset_run(api_client, sqlite_session_factory) 
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Eval dataset has no questions"
+
+
+def test_eval_api_detects_chinese_no_answer_refusal(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Eval runner should count Chinese no-answer responses as refusals."""
+
+    with sqlite_session_factory() as db:
+        project, _, _ = seed_retrieval_chunk(
+            db,
+            "eval-refusal",
+            "This document is about quantum computing only.",
+            [0.1] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+
+    dataset = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets",
+        json={"name": "Refusal Eval"},
+    ).json()
+    api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={
+            "question": "quantum computing 文档是否说明了公司本季度的销售收入？",
+            "should_answer": False,
+        },
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: FakeNoAnswerChatProvider(),
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={"retrieval_mode": "keyword", "top_k": 3},
+    )
+
+    assert response.status_code == 201
+    run = response.json()
+    assert run["metrics"]["refusal_rate"] == 1.0
+    assert run["metrics"]["answer_match_rate"] == 1.0
+    assert run["results"][0]["refused"] is True
+    assert run["results"][0]["answer_matched"] is True
+    assert run["results"][0]["score"] == 1.0

@@ -159,7 +159,18 @@ def _is_refusal(answer: str) -> bool:
     """Detect local or provider no-answer refusals."""
 
     lowered = answer.casefold()
-    return NO_ANSWER_MESSAGE.casefold() in lowered or "cannot answer" in lowered
+    refusal_markers = [
+        NO_ANSWER_MESSAGE.casefold(),
+        "cannot answer",
+        "can't answer",
+        "无法回答",
+        "无法从当前知识库回答",
+        "无法说明",
+        "没有相关信息",
+        "没有关于",
+        "未提及",
+    ]
+    return any(marker in lowered for marker in refusal_markers)
 
 
 def _aggregate_metrics(results: list[EvalResult]) -> dict:
@@ -271,7 +282,15 @@ def run_dataset(
                 else bool(citation_chunk_ids)
             )
             refused = _is_refusal(answer.answer)
-            answer_matched = _answer_matches(answer.answer, question.expected_answer_notes)
+            answer_matched = (
+                _answer_matches(answer.answer, question.expected_answer_notes)
+                if question.should_answer
+                else refused
+            )
+            if question.should_answer:
+                score = 1.0 if hit and citation_covered and answer_matched else 0.0
+            else:
+                score = 1.0 if answer_matched else 0.0
             result = EvalResult(
                 project_id=project_id,
                 run_id=run.id,
@@ -282,7 +301,7 @@ def run_dataset(
                 refused=refused,
                 retrieval_latency_ms=retrieval.latency_ms,
                 generation_latency_ms=generation_latency_ms,
-                score=1.0 if hit and citation_covered and answer_matched else 0.0,
+                score=score,
                 result_metadata={
                     "question": question.question,
                     "retrieval_log_id": str(retrieval.retrieval_log_id),
