@@ -215,6 +215,102 @@ def test_eval_api_lists_and_gets_run_history(
     assert cross_project_response.status_code == 404
 
 
+def test_eval_api_lists_and_deletes_questions_and_datasets(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Eval API should list/delete questions and delete datasets with owned runs."""
+
+    with sqlite_session_factory() as db:
+        project, document, chunk = seed_retrieval_chunk(
+            db,
+            "eval-manage",
+            "Google Sycamore claimed quantum supremacy in 2019.",
+            [0.1] * 1024,
+        )
+        other_project, _, _ = seed_retrieval_chunk(
+            db,
+            "eval-manage-other",
+            "Other project content.",
+            [0.2] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+        other_project_id = other_project.id
+        document_id = document.id
+        chunk_id = chunk.id
+
+    dataset = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets",
+        json={"name": "Manage Eval"},
+    ).json()
+    question_one = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={
+            "question": "What did Google Sycamore claim in 2019?",
+            "expected_document_id": str(document_id),
+            "expected_chunk_id": str(chunk_id),
+            "expected_answer_notes": "quantum supremacy",
+        },
+    ).json()
+    question_two = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={"question": "Second question"},
+    ).json()
+
+    list_response = api_client.get(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions"
+    )
+    cross_delete_question = api_client.delete(
+        f"/api/projects/{other_project_id}/eval/datasets/{dataset['id']}/questions/{question_one['id']}"
+    )
+    delete_question = api_client.delete(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions/{question_two['id']}"
+    )
+    list_after_delete = api_client.get(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions"
+    )
+
+    assert list_response.status_code == 200
+    assert [question["id"] for question in list_response.json()] == [
+        question_one["id"],
+        question_two["id"],
+    ]
+    assert cross_delete_question.status_code == 404
+    assert delete_question.status_code == 204
+    assert [question["id"] for question in list_after_delete.json()] == [question_one["id"]]
+
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: FakeEvalChatProvider(),
+    )
+    api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={"retrieval_mode": "hybrid", "top_k": 3},
+    )
+
+    cross_delete_dataset = api_client.delete(
+        f"/api/projects/{other_project_id}/eval/datasets/{dataset['id']}"
+    )
+    delete_dataset = api_client.delete(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}"
+    )
+    list_datasets = api_client.get(f"/api/projects/{project_id}/eval/datasets")
+
+    assert cross_delete_dataset.status_code == 404
+    assert delete_dataset.status_code == 204
+    assert list_datasets.json() == []
+    with sqlite_session_factory() as db:
+        assert db.query(EvalDataset).count() == 0
+        assert db.query(EvalQuestion).count() == 0
+        assert db.query(EvalResult).count() == 0
+
+
 def test_eval_api_rejects_empty_dataset_run(api_client, sqlite_session_factory) -> None:
     """Eval runner should reject datasets without questions."""
 

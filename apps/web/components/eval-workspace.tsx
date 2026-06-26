@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { evalApi, projectsApi } from "@/lib/api";
+import { documentsApi, evalApi, projectsApi } from "@/lib/api";
 import type {
+  DocumentItem,
   EvalDataset,
+  EvalQuestion,
   EvalRun,
   EvalRunSummary,
   Project,
@@ -31,6 +33,8 @@ export function EvalWorkspace() {
   const [selectedProjectId, setSelectedProjectId] = useState<UUID | "">("");
   const [datasets, setDatasets] = useState<EvalDataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<UUID | "">("");
+  const [questions, setQuestions] = useState<EvalQuestion[]>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [datasetName, setDatasetName] = useState("");
   const [question, setQuestion] = useState("");
   const [expectedNotes, setExpectedNotes] = useState("");
@@ -42,6 +46,8 @@ export function EvalWorkspace() {
   const [run, setRun] = useState<EvalRun | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
+  const [evalEditMode, setEvalEditMode] = useState(false);
+  const [busyEvalIds, setBusyEvalIds] = useState<Set<UUID>>(new Set());
   const [modal, setModal] = useState<"dataset" | "question" | "run" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +59,11 @@ export function EvalWorkspace() {
   const selectedDataset = useMemo(
     () => datasets.find((dataset) => dataset.id === selectedDatasetId) ?? null,
     [datasets, selectedDatasetId]
+  );
+
+  const documentNamesById = useMemo(
+    () => new Map(documents.map((document) => [document.id, document.filename])),
+    [documents]
   );
 
   useEffect(() => {
@@ -89,6 +100,23 @@ export function EvalWorkspace() {
   }, [selectedProjectId]);
 
   useEffect(() => {
+    async function loadDocuments(projectId: UUID) {
+      try {
+        const documentList = await documentsApi.list(projectId);
+        setDocuments(documentList);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Unable to load documents");
+      }
+    }
+
+    setDocuments([]);
+    setExpectedDocumentId("");
+    if (selectedProjectId) {
+      void loadDocuments(selectedProjectId);
+    }
+  }, [selectedProjectId]);
+
+  useEffect(() => {
     async function loadRuns(projectId: UUID, datasetId: UUID) {
       try {
         const runList = await evalApi.listRuns(projectId, datasetId);
@@ -100,8 +128,25 @@ export function EvalWorkspace() {
 
     setRun(null);
     setRuns([]);
+    setQuestions([]);
     if (selectedProjectId && selectedDatasetId) {
       void loadRuns(selectedProjectId, selectedDatasetId);
+    }
+  }, [selectedProjectId, selectedDatasetId]);
+
+  useEffect(() => {
+    async function loadQuestions(projectId: UUID, datasetId: UUID) {
+      try {
+        const questionList = await evalApi.listQuestions(projectId, datasetId);
+        setQuestions(questionList);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Unable to load eval questions");
+      }
+    }
+
+    setQuestions([]);
+    if (selectedProjectId && selectedDatasetId) {
+      void loadQuestions(selectedProjectId, selectedDatasetId);
     }
   }, [selectedProjectId, selectedDatasetId]);
 
@@ -114,6 +159,11 @@ export function EvalWorkspace() {
   async function refreshRuns(projectId: UUID, datasetId: UUID) {
     const runList = await evalApi.listRuns(projectId, datasetId);
     setRuns(runList);
+  }
+
+  async function refreshQuestions(projectId: UUID, datasetId: UUID) {
+    const questionList = await evalApi.listQuestions(projectId, datasetId);
+    setQuestions(questionList);
   }
 
   async function createDataset() {
@@ -154,6 +204,7 @@ export function EvalWorkspace() {
       setExpectedDocumentId("");
       setExpectedChunkId("");
       await refreshDatasets(selectedProjectId, selectedDatasetId);
+      await refreshQuestions(selectedProjectId, selectedDatasetId);
       setModal(null);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to add question");
@@ -198,6 +249,56 @@ export function EvalWorkspace() {
       setError(loadError instanceof Error ? loadError.message : "Unable to load eval run");
     } finally {
       setIsLoadingRun(false);
+    }
+  }
+
+  async function deleteDataset(dataset: EvalDataset) {
+    if (!selectedProjectId || !confirm(`Delete eval dataset "${dataset.name}"?`)) {
+      return;
+    }
+
+    setBusyEvalIds((current) => new Set(current).add(dataset.id));
+    setError(null);
+    try {
+      await evalApi.deleteDataset(selectedProjectId, dataset.id);
+      await refreshDatasets(selectedProjectId);
+      setRun(null);
+      setRuns([]);
+      setQuestions([]);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete dataset");
+    } finally {
+      setBusyEvalIds((current) => {
+        const next = new Set(current);
+        next.delete(dataset.id);
+        return next;
+      });
+    }
+  }
+
+  async function deleteQuestion(questionItem: EvalQuestion) {
+    if (
+      !selectedProjectId ||
+      !selectedDatasetId ||
+      !confirm(`Delete question "${questionItem.question}"?`)
+    ) {
+      return;
+    }
+
+    setBusyEvalIds((current) => new Set(current).add(questionItem.id));
+    setError(null);
+    try {
+      await evalApi.deleteQuestion(selectedProjectId, selectedDatasetId, questionItem.id);
+      await refreshQuestions(selectedProjectId, selectedDatasetId);
+      await refreshDatasets(selectedProjectId, selectedDatasetId);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete question");
+    } finally {
+      setBusyEvalIds((current) => {
+        const next = new Set(current);
+        next.delete(questionItem.id);
+        return next;
+      });
     }
   }
 
@@ -271,6 +372,14 @@ export function EvalWorkspace() {
               >
                 Run
               </button>
+              <button
+                aria-label="Toggle eval edit mode"
+                className={`icon-button ${evalEditMode ? "active" : ""}`}
+                onClick={() => setEvalEditMode((value) => !value)}
+                type="button"
+              >
+                Edit
+              </button>
             </div>
           </div>
           {datasets.length === 0 ? (
@@ -287,6 +396,16 @@ export function EvalWorkspace() {
                     <span>{dataset.name}</span>
                     <small>{dataset.question_count} questions</small>
                   </button>
+                  {evalEditMode ? (
+                    <button
+                      className="mini-button danger tool-row-action"
+                      disabled={busyEvalIds.has(dataset.id)}
+                      onClick={() => deleteDataset(dataset)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -331,6 +450,44 @@ export function EvalWorkspace() {
               <strong>{selectedDataset?.name ?? "No dataset selected"}</strong>
               <small>{selectedProject?.name ?? "No project selected"}</small>
             </div>
+            {selectedDataset ? (
+              <div className="eval-question-panel">
+                <div className="retrieval-summary">
+                  <strong>Questions</strong>
+                  <span>{questions.length}</span>
+                </div>
+                {questions.length === 0 ? (
+                  <p className="sidebar-empty">No questions in this dataset.</p>
+                ) : (
+                  <ul className="eval-question-list">
+                    {questions.map((questionItem) => (
+                      <li key={questionItem.id}>
+                        <span>{questionItem.question}</span>
+                        <small>
+                          {questionItem.expected_document_id
+                            ? documentNamesById.get(questionItem.expected_document_id) ??
+                              questionItem.expected_document_id
+                            : "Any document"}
+                          {questionItem.expected_answer_notes
+                            ? ` · ${questionItem.expected_answer_notes}`
+                            : ""}
+                        </small>
+                        {evalEditMode ? (
+                          <button
+                            className="mini-button danger"
+                            disabled={busyEvalIds.has(questionItem.id)}
+                            onClick={() => deleteQuestion(questionItem)}
+                            type="button"
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
             <div className="retrieval-query-actions">
               <span>
                 {mode} · top {topK}
@@ -449,13 +606,18 @@ export function EvalWorkspace() {
                   />
                 </label>
                 <label>
-                  Expected document id
-                  <input
+                  Expected document
+                  <select
                     onChange={(event) => setExpectedDocumentId(event.target.value)}
-                    placeholder="optional"
-                    type="text"
                     value={expectedDocumentId}
-                  />
+                  >
+                    <option value="">Any retrieved document</option>
+                    {documents.map((document) => (
+                      <option key={document.id} value={document.id}>
+                        {document.filename} · {document.status}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Expected chunk id

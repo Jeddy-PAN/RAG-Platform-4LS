@@ -153,6 +153,13 @@ export const evalApi = {
     projectId: UUID,
     payload: { name: string; description?: string | null }
   ) => jsonRequest<EvalDataset>(`/api/projects/${projectId}/eval/datasets`, "POST", payload),
+  deleteDataset: async (projectId: UUID, datasetId: UUID) => {
+    await request<void>(`/api/projects/${projectId}/eval/datasets/${datasetId}`, {
+      method: "DELETE"
+    });
+  },
+  listQuestions: (projectId: UUID, datasetId: UUID) =>
+    request<EvalQuestion[]>(`/api/projects/${projectId}/eval/datasets/${datasetId}/questions`),
   createQuestion: (
     projectId: UUID,
     datasetId: UUID,
@@ -169,6 +176,12 @@ export const evalApi = {
       "POST",
       payload
     ),
+  deleteQuestion: async (projectId: UUID, datasetId: UUID, questionId: UUID) => {
+    await request<void>(
+      `/api/projects/${projectId}/eval/datasets/${datasetId}/questions/${questionId}`,
+      { method: "DELETE" }
+    );
+  },
   runDataset: (
     projectId: UUID,
     datasetId: UUID,

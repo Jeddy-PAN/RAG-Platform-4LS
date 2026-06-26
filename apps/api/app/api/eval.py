@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -76,6 +76,18 @@ def list_datasets(project_id: uuid.UUID, db: Session = Depends(get_db)):
     return eval_service.list_datasets(db, project_id)
 
 
+@router.delete("/datasets/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_dataset(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """Delete an eval dataset and owned records."""
+
+    eval_service.delete_dataset(db, project_id, dataset_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/datasets/{dataset_id}/questions",
     response_model=EvalQuestionRead,
@@ -90,6 +102,36 @@ def create_question(
     """Add a question to an eval dataset."""
 
     return eval_service.create_question(db, project_id, dataset_id, payload)
+
+
+@router.get(
+    "/datasets/{dataset_id}/questions",
+    response_model=list[EvalQuestionRead],
+)
+def list_questions(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """List eval questions for one dataset."""
+
+    return eval_service.list_questions(db, project_id, dataset_id)
+
+
+@router.delete(
+    "/datasets/{dataset_id}/questions/{question_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_question(
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    question_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """Delete one eval question."""
+
+    eval_service.delete_question(db, project_id, dataset_id, question_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

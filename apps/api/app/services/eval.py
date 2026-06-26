@@ -211,6 +211,59 @@ def create_question(
     return question
 
 
+def list_questions(
+    db: Session,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+) -> list[EvalQuestion]:
+    """List questions for one same-project eval dataset."""
+
+    _get_dataset(db, project_id, dataset_id)
+    return list(
+        db.scalars(
+            select(EvalQuestion)
+            .where(
+                EvalQuestion.project_id == project_id,
+                EvalQuestion.dataset_id == dataset_id,
+            )
+            .order_by(EvalQuestion.created_at.asc())
+        )
+    )
+
+
+def delete_question(
+    db: Session,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    question_id: uuid.UUID,
+) -> None:
+    """Delete one same-project eval question."""
+
+    _get_dataset(db, project_id, dataset_id)
+    question = db.scalar(
+        select(EvalQuestion).where(
+            EvalQuestion.id == question_id,
+            EvalQuestion.project_id == project_id,
+            EvalQuestion.dataset_id == dataset_id,
+        )
+    )
+    if question is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Eval question not found",
+        )
+    db.delete(question)
+    db.commit()
+
+
+def delete_dataset(db: Session, project_id: uuid.UUID, dataset_id: uuid.UUID) -> None:
+    """Delete one same-project eval dataset and owned eval records."""
+
+    dataset = _get_dataset(db, project_id, dataset_id)
+    db.delete(dataset)
+    db.commit()
+
+
 def _answer_matches(answer: str, expected_notes: str | None) -> bool:
     """Check whether answer contains all expected note terms."""
 

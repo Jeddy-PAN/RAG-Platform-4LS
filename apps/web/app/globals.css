@@ -818,6 +818,16 @@ h1 {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.tool-list li {
+  display: grid;
+  gap: 6px;
+}
+
+.tool-list .tool-row-action {
+  justify-self: start;
+  margin-left: 10px;
+}
+
 .tool-list span,
 .tool-list small {
   display: block;
@@ -945,6 +955,55 @@ h1 {
 
 .eval-section-heading {
   margin: 8px 0 -4px;
+}
+
+.eval-question-panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.eval-question-list {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.eval-question-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.eval-question-list li:last-child {
+  border-bottom: 0;
+}
+
+.eval-question-list span,
+.eval-question-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eval-question-list span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.eval-question-list small {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.eval-question-list button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
 }
 
 .retrieval-summary {
