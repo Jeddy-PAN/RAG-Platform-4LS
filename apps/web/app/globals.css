@@ -202,6 +202,7 @@ a {
 .secondary-button,
 .message-composer button,
 .retrieval-controls button,
+.retrieval-query-actions button,
 .feedback-controls button {
   min-height: 34px;
   border: 1px solid var(--border);
@@ -494,7 +495,11 @@ h1 {
 .message-composer textarea,
 .retrieval-controls textarea,
 .retrieval-controls input,
-.retrieval-controls select {
+.retrieval-controls select,
+.retrieval-query-panel textarea,
+.tool-modal input,
+.tool-modal select,
+.tool-modal textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -516,6 +521,10 @@ h1 {
 .retrieval-controls textarea:focus,
 .retrieval-controls input:focus,
 .retrieval-controls select:focus,
+.retrieval-query-panel textarea:focus,
+.tool-modal input:focus,
+.tool-modal select:focus,
+.tool-modal textarea:focus,
 .icon-button:focus-visible,
 .mini-button:focus-visible,
 .text-button:focus-visible,
@@ -529,7 +538,8 @@ h1 {
 }
 
 .message-composer button,
-.retrieval-controls button {
+.retrieval-controls button,
+.retrieval-query-actions button {
   min-width: 90px;
   padding: 0 16px;
   color: #ffffff;
@@ -538,7 +548,8 @@ h1 {
 }
 
 .message-composer button:disabled,
-.retrieval-controls button:disabled {
+.retrieval-controls button:disabled,
+.retrieval-query-actions button:disabled {
   color: var(--muted);
   background: rgba(255, 255, 255, 0.68);
 }
@@ -764,6 +775,178 @@ h1 {
   overflow: hidden;
 }
 
+.tool-sidebar,
+.retrieval-query-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.tool-sidebar {
+  min-height: 420px;
+  padding: 16px 12px;
+}
+
+.tool-list {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.tool-list button {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--foreground);
+  background: transparent;
+  text-align: left;
+}
+
+.tool-list button:hover,
+.tool-list button.selected {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.tool-list button.selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tool-list span,
+.tool-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-list span {
+  font-weight: 800;
+}
+
+.tool-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.retrieval-workspace-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.retrieval-query-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.retrieval-query-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.retrieval-query-panel textarea {
+  min-height: 96px;
+  padding: 12px;
+  resize: vertical;
+}
+
+.retrieval-query-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.retrieval-query-actions span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(24, 25, 27, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.tool-modal {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+
+.modal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.tool-modal label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.tool-modal input,
+.tool-modal select,
+.tool-modal textarea {
+  padding: 10px;
+}
+
+.tool-modal textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
+.tool-modal > button {
+  min-height: 36px;
+  border: 1px solid var(--foreground);
+  border-radius: 8px;
+  color: #ffffff;
+  background: var(--foreground);
+  font-weight: 800;
+}
+
+.tool-modal > button:disabled {
+  color: var(--muted);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.eval-sidebar {
+  display: grid;
+  gap: 12px;
+}
+
+.eval-section-heading {
+  margin: 8px 0 -4px;
+}
+
 .retrieval-summary {
   justify-content: space-between;
   padding: 12px 14px;
@@ -930,6 +1113,15 @@ h1 {
 
   .retrieval-header {
     flex-direction: column-reverse;
+  }
+
+  .retrieval-query-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .retrieval-query-actions button {
+    width: 100%;
   }
 }
 

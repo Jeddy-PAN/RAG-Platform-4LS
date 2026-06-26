@@ -12,7 +12,6 @@ type ProjectListProps = {
   loading: boolean;
   loadingDocuments: Set<UUID>;
   onDeleteDocument: (projectId: UUID, document: DocumentItem) => void;
-  onRefreshDocuments: (projectId: UUID) => void;
   onReindexDocument: (projectId: UUID, document: DocumentItem) => void;
   onSelectProject: (projectId: UUID) => void;
   onToggleExpand: (projectId: UUID) => void;
@@ -30,7 +29,6 @@ export function ProjectList({
   loading,
   loadingDocuments,
   onDeleteDocument,
-  onRefreshDocuments,
   onReindexDocument,
   onSelectProject,
   onToggleExpand,
@@ -58,7 +56,6 @@ export function ProjectList({
           loadingFiles={loadingDocuments.has(project.id)}
           onDelete={onDeleteProject}
           onDeleteDocument={onDeleteDocument}
-          onRefreshDocuments={onRefreshDocuments}
           onReindexDocument={onReindexDocument}
           onRename={onRenameProject}
           onSelect={onSelectProject}

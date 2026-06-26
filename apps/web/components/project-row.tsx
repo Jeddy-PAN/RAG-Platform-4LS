@@ -10,7 +10,6 @@ type ProjectRowProps = {
   editMode: boolean;
   loadingFiles: boolean;
   onDeleteDocument: (projectId: UUID, document: DocumentItem) => void;
-  onRefreshDocuments: (projectId: UUID) => void;
   onReindexDocument: (projectId: UUID, document: DocumentItem) => void;
   onSelect: (projectId: UUID) => void;
   onToggleExpand: (projectId: UUID) => void;
@@ -27,7 +26,6 @@ export function ProjectRow({
   editMode,
   loadingFiles,
   onDeleteDocument,
-  onRefreshDocuments,
   onReindexDocument,
   onSelect,
   onToggleExpand,
@@ -73,9 +71,9 @@ export function ProjectRow({
         <ProjectFileTree
           busyDocumentIds={busyDocumentIds}
           documents={documents}
+          editMode={editMode}
           isLoading={loadingFiles}
           onDeleteDocument={(document) => onDeleteDocument(project.id, document)}
-          onRefreshDocuments={() => onRefreshDocuments(project.id)}
           onReindexDocument={(document) => onReindexDocument(project.id, document)}
         />
       ) : null}

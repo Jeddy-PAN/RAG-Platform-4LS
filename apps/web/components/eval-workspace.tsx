@@ -42,7 +42,13 @@ export function EvalWorkspace() {
   const [run, setRun] = useState<EvalRun | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
+  const [modal, setModal] = useState<"dataset" | "question" | "run" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId]
+  );
 
   const selectedDataset = useMemo(
     () => datasets.find((dataset) => dataset.id === selectedDatasetId) ?? null,
@@ -123,6 +129,7 @@ export function EvalWorkspace() {
       });
       setDatasetName("");
       await refreshDatasets(selectedProjectId, dataset.id);
+      setModal(null);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to create dataset");
     }
@@ -147,6 +154,7 @@ export function EvalWorkspace() {
       setExpectedDocumentId("");
       setExpectedChunkId("");
       await refreshDatasets(selectedProjectId, selectedDatasetId);
+      setModal(null);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to add question");
     }
@@ -168,6 +176,7 @@ export function EvalWorkspace() {
       });
       setRun(result);
       await refreshRuns(selectedProjectId, selectedDatasetId);
+      setModal(null);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Eval run failed");
     } finally {
@@ -203,158 +212,141 @@ export function EvalWorkspace() {
       </header>
 
       <div className="retrieval-layout">
-        <section className="retrieval-controls">
-          <label>
-            Project
-            <select
-              onChange={(event) => setSelectedProjectId(event.target.value)}
-              value={selectedProjectId}
-            >
+        <aside className="tool-sidebar eval-sidebar">
+          <div className="sidebar-heading">
+            <div>
+              <span className="sidebar-label">Projects</span>
+              <strong>{projects.length}</strong>
+            </div>
+          </div>
+          {projects.length === 0 ? (
+            <p className="sidebar-empty">Create a project before running eval.</p>
+          ) : (
+            <ul className="tool-list">
               {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Dataset
-            <select
-              onChange={(event) => setSelectedDatasetId(event.target.value)}
-              value={selectedDatasetId}
-            >
-              <option value="">Select dataset</option>
-              {datasets.map((dataset) => (
-                <option key={dataset.id} value={dataset.id}>
-                  {dataset.name} ({dataset.question_count})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="eval-inline">
-            <input
-              onChange={(event) => setDatasetName(event.target.value)}
-              placeholder="New dataset"
-              type="text"
-              value={datasetName}
-            />
-            <button disabled={!datasetName.trim()} onClick={createDataset} type="button">
-              Add
-            </button>
-          </div>
-
-          <label>
-            Question
-            <textarea
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Question expected from this knowledge base"
-              rows={4}
-              value={question}
-            />
-          </label>
-
-          <label>
-            Expected answer notes
-            <input
-              onChange={(event) => setExpectedNotes(event.target.value)}
-              placeholder="keywords such as quantum supremacy"
-              type="text"
-              value={expectedNotes}
-            />
-          </label>
-
-          <label>
-            Expected document id
-            <input
-              onChange={(event) => setExpectedDocumentId(event.target.value)}
-              placeholder="optional"
-              type="text"
-              value={expectedDocumentId}
-            />
-          </label>
-
-          <label>
-            Expected chunk id
-            <input
-              onChange={(event) => setExpectedChunkId(event.target.value)}
-              placeholder="optional"
-              type="text"
-              value={expectedChunkId}
-            />
-          </label>
-
-          <button
-            disabled={!selectedDatasetId || !question.trim()}
-            onClick={addQuestion}
-            type="button"
-          >
-            Add question
-          </button>
-
-          <div className="retrieval-grid">
-            <label>
-              Mode
-              <select onChange={(event) => setMode(event.target.value as RetrievalMode)} value={mode}>
-                <option value="hybrid">Hybrid</option>
-                <option value="vector">Vector</option>
-                <option value="keyword">Keyword</option>
-              </select>
-            </label>
-            <label>
-              Top K
-              <input
-                min={1}
-                max={50}
-                onChange={(event) => setTopK(Number(event.target.value))}
-                type="number"
-                value={topK}
-              />
-            </label>
-          </div>
-
-          <button
-            disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}
-            onClick={runEval}
-            type="button"
-          >
-            {isRunning ? "Running" : "Run eval"}
-          </button>
-        </section>
-
-        <div>
-          {error ? <ErrorState message={error} /> : null}
-          {runs.length > 0 ? (
-            <section className="eval-run-history">
-              <div className="retrieval-summary">
-                <strong>Recent runs</strong>
-                <span>{runs.length}</span>
-              </div>
-              <div className="eval-run-list">
-                {runs.map((item) => (
+                <li key={project.id}>
                   <button
-                    className={run?.id === item.id ? "active" : ""}
-                    disabled={isLoadingRun}
-                    key={item.id}
-                    onClick={() => loadRunDetail(item.id)}
+                    className={project.id === selectedProjectId ? "selected" : ""}
+                    onClick={() => setSelectedProjectId(project.id)}
                     type="button"
                   >
-                    <span>
-                      {item.retrieval_mode} · top {item.top_k}
-                    </span>
-                    <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
-                    <small>
-                      {item.status} · {item.result_count} results
-                    </small>
+                    <span>{project.name}</span>
+                    {project.description ? <small>{project.description}</small> : null}
                   </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="sidebar-heading eval-section-heading">
+            <div>
+              <span className="sidebar-label">Datasets</span>
+              <strong>{datasets.length}</strong>
+            </div>
+            <div className="sidebar-actions">
+              <button
+                aria-label="Create eval dataset"
+                className="icon-button"
+                disabled={!selectedProjectId}
+                onClick={() => setModal("dataset")}
+                type="button"
+              >
+                +
+              </button>
+              <button
+                aria-label="Add eval question"
+                className="icon-button"
+                disabled={!selectedDatasetId}
+                onClick={() => setModal("question")}
+                type="button"
+              >
+                Q
+              </button>
+              <button
+                aria-label="Run eval"
+                className="icon-button"
+                disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}
+                onClick={() => setModal("run")}
+                type="button"
+              >
+                Run
+              </button>
+            </div>
+          </div>
+          {datasets.length === 0 ? (
+            <p className="sidebar-empty">Create a dataset to add questions.</p>
+          ) : (
+            <ul className="tool-list">
+              {datasets.map((dataset) => (
+                <li key={dataset.id}>
+                  <button
+                    className={dataset.id === selectedDatasetId ? "selected" : ""}
+                    onClick={() => setSelectedDatasetId(dataset.id)}
+                    type="button"
+                  >
+                    <span>{dataset.name}</span>
+                    <small>{dataset.question_count} questions</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="sidebar-heading eval-section-heading">
+            <div>
+              <span className="sidebar-label">Recent runs</span>
+              <strong>{runs.length}</strong>
+            </div>
+          </div>
+          {runs.length > 0 ? (
+            <div className="eval-run-list compact">
+              {runs.map((item) => (
+                <button
+                  className={run?.id === item.id ? "active" : ""}
+                  disabled={isLoadingRun}
+                  key={item.id}
+                  onClick={() => loadRunDetail(item.id)}
+                  type="button"
+                >
+                  <span>
+                    {item.retrieval_mode} · top {item.top_k}
+                  </span>
+                  <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
+                  <small>
+                    {item.status} · {item.result_count} results
+                  </small>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="sidebar-empty">No runs for this dataset.</p>
+          )}
+        </aside>
+
+        <div className="retrieval-workspace-panel">
+          {error ? <ErrorState message={error} /> : null}
+          <section className="retrieval-query-panel">
+            <div>
+              <span className="sidebar-label">Eval target</span>
+              <strong>{selectedDataset?.name ?? "No dataset selected"}</strong>
+              <small>{selectedProject?.name ?? "No project selected"}</small>
+            </div>
+            <div className="retrieval-query-actions">
+              <span>
+                {mode} · top {topK}
+              </span>
+              <button
+                disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}
+                onClick={() => setModal("run")}
+                type="button"
+              >
+                {isRunning ? "Running" : "Run eval"}
+              </button>
+            </div>
+          </section>
           {!run ? (
             <section className="retrieval-empty">
-              Select or create a dataset, add questions, then run eval.
+              Select a previous run or create a dataset, add questions, then run eval.
             </section>
           ) : (
             <section className="retrieval-results">
@@ -395,6 +387,127 @@ export function EvalWorkspace() {
           )}
         </div>
       </div>
+      {modal ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}>
+          <section
+            aria-modal="true"
+            className="tool-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal-heading">
+              <div>
+                <span className="sidebar-label">Eval</span>
+                <strong>
+                  {modal === "dataset"
+                    ? "New dataset"
+                    : modal === "question"
+                      ? "Add question"
+                      : "Run settings"}
+                </strong>
+              </div>
+              <button className="icon-button" onClick={() => setModal(null)} type="button">
+                Close
+              </button>
+            </div>
+
+            {modal === "dataset" ? (
+              <>
+                <label>
+                  Dataset name
+                  <input
+                    onChange={(event) => setDatasetName(event.target.value)}
+                    placeholder="Quantum basics"
+                    type="text"
+                    value={datasetName}
+                  />
+                </label>
+                <button disabled={!datasetName.trim()} onClick={createDataset} type="button">
+                  Create dataset
+                </button>
+              </>
+            ) : null}
+
+            {modal === "question" ? (
+              <>
+                <label>
+                  Question
+                  <textarea
+                    onChange={(event) => setQuestion(event.target.value)}
+                    placeholder="Question expected from this knowledge base"
+                    rows={4}
+                    value={question}
+                  />
+                </label>
+                <label>
+                  Expected answer notes
+                  <input
+                    onChange={(event) => setExpectedNotes(event.target.value)}
+                    placeholder="keywords such as quantum supremacy"
+                    type="text"
+                    value={expectedNotes}
+                  />
+                </label>
+                <label>
+                  Expected document id
+                  <input
+                    onChange={(event) => setExpectedDocumentId(event.target.value)}
+                    placeholder="optional"
+                    type="text"
+                    value={expectedDocumentId}
+                  />
+                </label>
+                <label>
+                  Expected chunk id
+                  <input
+                    onChange={(event) => setExpectedChunkId(event.target.value)}
+                    placeholder="optional"
+                    type="text"
+                    value={expectedChunkId}
+                  />
+                </label>
+                <button
+                  disabled={!selectedDatasetId || !question.trim()}
+                  onClick={addQuestion}
+                  type="button"
+                >
+                  Add question
+                </button>
+              </>
+            ) : null}
+
+            {modal === "run" ? (
+              <>
+                <label>
+                  Mode
+                  <select onChange={(event) => setMode(event.target.value as RetrievalMode)} value={mode}>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="vector">Vector</option>
+                    <option value="keyword">Keyword</option>
+                  </select>
+                </label>
+                <label>
+                  Top K
+                  <input
+                    min={1}
+                    max={50}
+                    onChange={(event) => setTopK(Number(event.target.value))}
+                    type="number"
+                    value={topK}
+                  />
+                </label>
+                <button
+                  disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}
+                  onClick={runEval}
+                  type="button"
+                >
+                  {isRunning ? "Running" : "Run eval"}
+                </button>
+              </>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

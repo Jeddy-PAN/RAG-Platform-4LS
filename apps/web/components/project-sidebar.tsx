@@ -63,6 +63,15 @@ export function ProjectSidebar({
               +
             </button>
             <button
+              aria-label="Refresh active project files"
+              className="icon-button"
+              disabled={!activeProjectId}
+              onClick={() => activeProjectId ? onRefreshDocuments(activeProjectId) : undefined}
+              type="button"
+            >
+              R
+            </button>
+            <button
               aria-label="Toggle project edit mode"
               className={`icon-button ${editMode ? "active" : ""}`}
               onClick={onToggleEditMode}
@@ -82,7 +91,6 @@ export function ProjectSidebar({
           loading={isLoadingProjects}
           loadingDocuments={loadingDocuments}
           onDeleteDocument={onDeleteDocument}
-          onRefreshDocuments={onRefreshDocuments}
           onReindexDocument={onReindexDocument}
           onDeleteProject={onDeleteProject}
           onRenameProject={onRenameProject}

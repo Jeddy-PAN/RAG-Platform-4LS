@@ -6,8 +6,8 @@ type ProjectFileTreeProps = {
   documents: DocumentItem[];
   isLoading: boolean;
   busyDocumentIds: Set<UUID>;
+  editMode: boolean;
   onDeleteDocument: (document: DocumentItem) => void;
-  onRefreshDocuments: () => void;
   onReindexDocument: (document: DocumentItem) => void;
 };
 
@@ -15,8 +15,8 @@ export function ProjectFileTree({
   documents,
   isLoading,
   busyDocumentIds,
+  editMode,
   onDeleteDocument,
-  onRefreshDocuments,
   onReindexDocument
 }: ProjectFileTreeProps) {
   if (isLoading) {
@@ -38,34 +38,28 @@ export function ProjectFileTree({
               <span>{formatBytes(document.file_size_bytes)}</span>
             </span>
           </div>
-          <div className="file-actions">
-            <button
-              aria-label={`Refresh ${document.filename}`}
-              className="mini-button"
-              onClick={onRefreshDocuments}
-              type="button"
-            >
-              Refresh
-            </button>
-            <button
-              aria-label={`Reindex ${document.filename}`}
-              className="mini-button"
-              disabled={busyDocumentIds.has(document.id)}
-              onClick={() => onReindexDocument(document)}
-              type="button"
-            >
-              Reindex
-            </button>
-            <button
-              aria-label={`Delete ${document.filename}`}
-              className="mini-button danger"
-              disabled={busyDocumentIds.has(document.id)}
-              onClick={() => onDeleteDocument(document)}
-              type="button"
-            >
-              Delete
-            </button>
-          </div>
+          {editMode ? (
+            <div className="file-actions">
+              <button
+                aria-label={`Reindex ${document.filename}`}
+                className="mini-button"
+                disabled={busyDocumentIds.has(document.id)}
+                onClick={() => onReindexDocument(document)}
+                type="button"
+              >
+                Reindex
+              </button>
+              <button
+                aria-label={`Delete ${document.filename}`}
+                className="mini-button danger"
+                disabled={busyDocumentIds.has(document.id)}
+                onClick={() => onDeleteDocument(document)}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+          ) : null}
           {document.error_message ? <p className="file-error">{document.error_message}</p> : null}
         </li>
       ))}

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { projectsApi, retrievalApi } from "@/lib/api";
 import type { Project, RetrievalMode, RetrievalResponse, UUID } from "@/lib/types";
 import { ErrorState } from "./error-state";
-import { RetrievalControls } from "./retrieval-controls";
 import { RetrievalResults } from "./retrieval-results";
 
 export function RetrievalWorkspace() {
@@ -15,7 +14,10 @@ export function RetrievalWorkspace() {
   const [topK, setTopK] = useState(8);
   const [response, setResponse] = useState<RetrievalResponse | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
 
   useEffect(() => {
     async function loadProjects() {
@@ -65,24 +67,110 @@ export function RetrievalWorkspace() {
         </div>
       </header>
       <div className="retrieval-layout">
-        <RetrievalControls
-          isRunning={isRunning}
-          mode={mode}
-          onModeChange={setMode}
-          onProjectChange={setSelectedProjectId}
-          onQueryChange={setQuery}
-          onRun={runRetrieval}
-          onTopKChange={setTopK}
-          projects={projects}
-          query={query}
-          selectedProjectId={selectedProjectId}
-          topK={topK}
-        />
-        <div>
+        <aside className="tool-sidebar">
+          <div className="sidebar-heading">
+            <div>
+              <span className="sidebar-label">Projects</span>
+              <strong>{projects.length}</strong>
+            </div>
+            <div className="sidebar-actions">
+              <button
+                aria-label="Open retrieval settings"
+                className="icon-button"
+                onClick={() => setSettingsOpen(true)}
+                type="button"
+              >
+                Settings
+              </button>
+            </div>
+          </div>
+          {projects.length === 0 ? (
+            <p className="sidebar-empty">Create a project before testing retrieval.</p>
+          ) : (
+            <ul className="tool-list">
+              {projects.map((project) => (
+                <li key={project.id}>
+                  <button
+                    className={project.id === selectedProjectId ? "selected" : ""}
+                    onClick={() => setSelectedProjectId(project.id)}
+                    type="button"
+                  >
+                    <span>{project.name}</span>
+                    {project.description ? <small>{project.description}</small> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
+
+        <div className="retrieval-workspace-panel">
           {error ? <ErrorState message={error} /> : null}
+          <section className="retrieval-query-panel">
+            <div>
+              <span className="sidebar-label">Selected project</span>
+              <strong>{selectedProject?.name ?? "No project selected"}</strong>
+            </div>
+            <textarea
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Test retrieval before answer generation"
+              rows={3}
+              value={query}
+            />
+            <div className="retrieval-query-actions">
+              <span>
+                {mode} · top {topK}
+              </span>
+              <button
+                disabled={isRunning || !selectedProjectId || !query.trim()}
+                onClick={runRetrieval}
+                type="button"
+              >
+                {isRunning ? "Running" : "Run retrieval"}
+              </button>
+            </div>
+          </section>
           <RetrievalResults response={response} />
         </div>
       </div>
+      {settingsOpen ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
+          <section
+            aria-modal="true"
+            className="tool-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal-heading">
+              <div>
+                <span className="sidebar-label">Retrieval</span>
+                <strong>Settings</strong>
+              </div>
+              <button className="icon-button" onClick={() => setSettingsOpen(false)} type="button">
+                Close
+              </button>
+            </div>
+            <label>
+              Mode
+              <select onChange={(event) => setMode(event.target.value as RetrievalMode)} value={mode}>
+                <option value="hybrid">Hybrid</option>
+                <option value="vector">Vector</option>
+                <option value="keyword">Keyword</option>
+              </select>
+            </label>
+            <label>
+              Top K
+              <input
+                max={50}
+                min={1}
+                onChange={(event) => setTopK(Number(event.target.value))}
+                type="number"
+                value={topK}
+              />
+            </label>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
