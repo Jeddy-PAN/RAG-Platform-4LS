@@ -1,4 +1,6 @@
 from app.models.eval import EvalDataset, EvalQuestion, EvalResult, EvalRunStatus
+from app.models.retrieval import RetrievalLog
+from app.services.eval import _answer_matches
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
 
@@ -134,6 +136,65 @@ def test_eval_api_runs_dataset_and_records_metrics(
         assert db.query(EvalDataset).count() == 1
         assert db.query(EvalQuestion).count() == 1
         assert db.query(EvalResult).count() == 1
+
+
+def test_eval_api_passes_reranker_options_to_retrieval(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Eval runs should be able to compare retrieval with reranking enabled."""
+
+    with sqlite_session_factory() as db:
+        project, document, chunk = seed_retrieval_chunk(
+            db,
+            "eval-rerank",
+            "Google Sycamore claimed quantum supremacy in 2019.",
+            [0.1] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+        document_id = document.id
+        chunk_id = chunk.id
+
+    dataset = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets",
+        json={"name": "Reranker Eval"},
+    ).json()
+    api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={
+            "question": "What did Google Sycamore claim in 2019?",
+            "expected_document_id": str(document_id),
+            "expected_chunk_id": str(chunk_id),
+            "expected_answer_notes": "quantum supremacy",
+        },
+    )
+
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: FakeEvalChatProvider(),
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={
+            "retrieval_mode": "hybrid",
+            "top_k": 3,
+            "reranker_enabled": True,
+            "reranker_candidate_limit": 10,
+        },
+    )
+
+    assert response.status_code == 201
+    with sqlite_session_factory() as db:
+        log = db.query(RetrievalLog).one()
+        assert log.retrieval_metadata["reranker_enabled"] is True
+        assert log.retrieval_metadata["reranker"] == "keyword_overlap"
 
 
 def test_eval_api_lists_and_gets_run_history(
@@ -383,3 +444,74 @@ def test_eval_api_detects_chinese_no_answer_refusal(
     assert run["results"][0]["refused"] is True
     assert run["results"][0]["answer_matched"] is True
     assert run["results"][0]["score"] == 1.0
+
+
+def test_answer_matching_handles_multilingual_eval_notes() -> None:
+    """Answer matching should handle semicolon notes and common Chinese equivalents."""
+
+    sycamore_answer = (
+        "Google 的 Sycamore 处理器与 2019 年的量子霸权声明相关，"
+        "不应该被误解为通用商业优势，也不能证明 Sycamore 能破解加密。"
+    )
+    lantern_answer = (
+        "Project Lantern 是后量子密码敏捷性迁移项目；"
+        "Project Atlas 是数据平台索引项目，负责文档摄取质量指标。"
+    )
+    support_answer = (
+        "LSR-104 建议先检查 API 服务是否可达，确认 /health 能正常响应；"
+        "它不是 DeepSeek、Ollama 或 embedding 质量导致的。"
+    )
+
+    assert _answer_matches(
+        sycamore_answer,
+        "Sycamore; 2019 quantum supremacy; not break encryption",
+    )
+    assert _answer_matches(
+        lantern_answer,
+        "Lantern cryptographic agility; Atlas data indexing",
+    )
+    assert _answer_matches(
+        support_answer,
+        "API reachability; /health; not DeepSeek Ollama embedding",
+    )
+
+
+def test_answer_matching_handles_real_chinese_eval_answers() -> None:
+    """Answer matching should accept real provider wording from local eval runs."""
+
+    sycamore_answer = (
+        "Google 的 Sycamore 在这些资料中与 2019 年的量子霸权声明"
+        "（quantum supremacy claim）相关。这个成果不应被误解为通用商业优势，"
+        "也不应被误解为能够破解加密。"
+    )
+    lantern_answer = (
+        "Project Lantern 是内部的后量子迁移项目，负责加密敏捷性，包括库存管理、"
+        "密钥交换、证书轮换及支持文档。Project Atlas 是一个独立的数据平台索引计划，"
+        "主导文档摄入质量指标，不涉及加密标准。"
+    )
+    support_answer = (
+        "根据 LSR-104 的记录，页面报 failed to fetch 时，建议首先检查 API 服务是否可访问。"
+        "具体措施是重启 API 服务，并确认 /health 端点能够正常响应后再进行测试。"
+        "该问题并非由模型提供商故障，如 DeepSeek、Ollama，或嵌入质量所导致。"
+    )
+    ibm_answer = (
+        "IBM Osprey 是一款 433 量子比特的超导处理器，主要用于规模演示。"
+        "IBM Heron 则被描述为一种模块化架构，专门与模块化扩展计划绑定。"
+    )
+
+    assert _answer_matches(
+        sycamore_answer,
+        "Sycamore; 2019 quantum supremacy; not break encryption",
+    )
+    assert _answer_matches(
+        lantern_answer,
+        "Lantern cryptographic agility; Atlas data indexing",
+    )
+    assert _answer_matches(
+        support_answer,
+        "API reachability; /health; not DeepSeek Ollama embedding",
+    )
+    assert _answer_matches(
+        ibm_answer,
+        "Osprey 433-qubit processor; Heron modular scale-out",
+    )

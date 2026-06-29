@@ -23,6 +23,8 @@ def send_chat_message(
     top_k: int = 8,
     vector_weight: float = 0.65,
     keyword_weight: float = 0.35,
+    reranker_enabled: bool = False,
+    reranker_candidate_limit: int = 40,
 ):
     """Persist a user message, run retrieval, generate an answer, and cite context."""
 
@@ -51,6 +53,8 @@ def send_chat_message(
         top_k=top_k,
         vector_weight=vector_weight,
         keyword_weight=keyword_weight,
+        reranker_enabled=reranker_enabled,
+        reranker_candidate_limit=reranker_candidate_limit,
     )
     try:
         answer = generate_answer(

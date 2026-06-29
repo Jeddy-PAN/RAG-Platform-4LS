@@ -60,6 +60,53 @@ def test_chat_api_creates_conversation_messages_and_citations(
         assert db.query(RetrievalLog).count() == 1
 
 
+def test_chat_api_passes_reranker_options_to_retrieval(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Chat retrieval options should enable reranking and persist that choice."""
+
+    with sqlite_session_factory() as db:
+        project, _, _ = seed_retrieval_chunk(
+            db,
+            "chat-rerank",
+            "google sycamore quantum supremacy",
+            [0.1] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: FakeChatProvider(),
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "conversation_id": None,
+            "message": "What did Google Sycamore claim?",
+            "retrieval": {
+                "mode": "hybrid",
+                "top_k": 3,
+                "reranker_enabled": True,
+                "reranker_candidate_limit": 10,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    with sqlite_session_factory() as db:
+        log = db.query(RetrievalLog).one()
+        assert log.retrieval_metadata["reranker_enabled"] is True
+        assert log.retrieval_metadata["reranker"] == "keyword_overlap"
+
+
 def test_chat_api_returns_refusal_without_retrieved_context(
     api_client,
     sqlite_session_factory,

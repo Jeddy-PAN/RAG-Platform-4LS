@@ -15,6 +15,8 @@ class RetrievalQueryRequest(BaseModel):
     vector_weight: Annotated[float, Field(ge=0, le=1)] = 0.65
     keyword_weight: Annotated[float, Field(ge=0, le=1)] = 0.35
     similarity_threshold: Annotated[float, Field(ge=-1, le=1)] = 0.0
+    reranker_enabled: bool = False
+    reranker_candidate_limit: Annotated[int, Field(ge=1, le=200)] = 40
 
     @model_validator(mode="after")
     def validate_query_and_weights(self) -> "RetrievalQueryRequest":

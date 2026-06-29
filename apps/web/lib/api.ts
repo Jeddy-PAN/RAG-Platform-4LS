@@ -115,6 +115,8 @@ export const chatApi = {
         top_k: number;
         vector_weight: number;
         keyword_weight: number;
+        reranker_enabled?: boolean;
+        reranker_candidate_limit?: number;
       };
     }
   ) => jsonRequest<ChatMessageResponse>(`/api/projects/${projectId}/chat/messages`, "POST", payload)
@@ -142,6 +144,8 @@ export const retrievalApi = {
       vector_weight: number;
       keyword_weight: number;
       similarity_threshold: number;
+      reranker_enabled?: boolean;
+      reranker_candidate_limit?: number;
     }
   ) => jsonRequest<RetrievalResponse>(`/api/projects/${projectId}/retrieval/query`, "POST", payload)
 };
@@ -190,6 +194,8 @@ export const evalApi = {
       top_k: number;
       vector_weight: number;
       keyword_weight: number;
+      reranker_enabled?: boolean;
+      reranker_candidate_limit?: number;
     }
   ) =>
     jsonRequest<EvalRun>(

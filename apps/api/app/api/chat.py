@@ -28,6 +28,8 @@ def send_message(
         top_k=payload.retrieval.top_k,
         vector_weight=payload.retrieval.vector_weight,
         keyword_weight=payload.retrieval.keyword_weight,
+        reranker_enabled=payload.retrieval.reranker_enabled,
+        reranker_candidate_limit=payload.retrieval.reranker_candidate_limit,
     )
     return ChatMessageResponse(
         conversation_id=result["conversation"].id,

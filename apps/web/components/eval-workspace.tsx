@@ -42,6 +42,8 @@ export function EvalWorkspace() {
   const [expectedChunkId, setExpectedChunkId] = useState("");
   const [mode, setMode] = useState<RetrievalMode>("hybrid");
   const [topK, setTopK] = useState(8);
+  const [rerankerEnabled, setRerankerEnabled] = useState(false);
+  const [rerankerCandidateLimit, setRerankerCandidateLimit] = useState(40);
   const [runs, setRuns] = useState<EvalRunSummary[]>([]);
   const [run, setRun] = useState<EvalRun | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -223,7 +225,9 @@ export function EvalWorkspace() {
         retrieval_mode: mode,
         top_k: topK,
         vector_weight: 0.65,
-        keyword_weight: 0.35
+        keyword_weight: 0.35,
+        reranker_enabled: rerankerEnabled,
+        reranker_candidate_limit: rerankerCandidateLimit
       });
       setRun(result);
       await refreshRuns(selectedProjectId, selectedDatasetId);
@@ -491,6 +495,7 @@ export function EvalWorkspace() {
             <div className="retrieval-query-actions">
               <span>
                 {mode} · top {topK}
+                {rerankerEnabled ? " · rerank" : ""}
               </span>
               <button
                 disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}
@@ -656,6 +661,25 @@ export function EvalWorkspace() {
                     onChange={(event) => setTopK(Number(event.target.value))}
                     type="number"
                     value={topK}
+                  />
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    checked={rerankerEnabled}
+                    onChange={(event) => setRerankerEnabled(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Reranker
+                </label>
+                <label>
+                  Rerank candidates
+                  <input
+                    disabled={!rerankerEnabled}
+                    max={200}
+                    min={1}
+                    onChange={(event) => setRerankerCandidateLimit(Number(event.target.value))}
+                    type="number"
+                    value={rerankerCandidateLimit}
                   />
                 </label>
                 <button

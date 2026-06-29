@@ -30,6 +30,12 @@ export function RetrievalResults({ response }: RetrievalResultsProps) {
               <span>fused {result.fused_score?.toFixed(4) ?? "n/a"}</span>
               <span>vector {result.vector_score?.toFixed(4) ?? "n/a"}</span>
               <span>keyword {result.keyword_score?.toFixed(4) ?? "n/a"}</span>
+              {typeof result.score_metadata.reranker_score === "number" ? (
+                <span>
+                  rerank {result.score_metadata.reranker_score.toFixed(4)} · was #
+                  {String(result.score_metadata.pre_rerank_rank ?? "?")}
+                </span>
+              ) : null}
             </div>
           </li>
         ))}

@@ -1,4 +1,6 @@
 import uuid
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -13,6 +15,26 @@ from app.schemas.retrieval import (
 
 
 router = APIRouter(prefix="/api/projects/{project_id}/retrieval", tags=["retrieval"])
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert library scalar values before API serialization."""
+
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "item"):
+        return _json_safe(value.item())
+    return value
+
+
+def _optional_float(value: Any) -> float | None:
+    """Normalize optional numeric scores for response models."""
+
+    if value is None:
+        return None
+    return float(value)
 
 
 @router.post("/query", response_model=RetrievalQueryResponse)
@@ -32,6 +54,8 @@ def query_retrieval(
         vector_weight=payload.vector_weight,
         keyword_weight=payload.keyword_weight,
         similarity_threshold=payload.similarity_threshold,
+        reranker_enabled=payload.reranker_enabled,
+        reranker_candidate_limit=payload.reranker_candidate_limit,
     )
     return RetrievalQueryResponse(
         query=result.query,
@@ -47,11 +71,11 @@ def query_retrieval(
                 document_name=candidate.document_name,
                 chunk_index=candidate.chunk_index,
                 text_preview=candidate.text[:300],
-                source_metadata=candidate.source_metadata,
-                vector_score=candidate.vector_score,
-                keyword_score=candidate.keyword_score,
-                fused_score=candidate.fused_score,
-                score_metadata=candidate.score_metadata,
+                source_metadata=_json_safe(candidate.source_metadata),
+                vector_score=_optional_float(candidate.vector_score),
+                keyword_score=_optional_float(candidate.keyword_score),
+                fused_score=_optional_float(candidate.fused_score),
+                score_metadata=_json_safe(candidate.score_metadata),
             )
             for index, candidate in enumerate(result.results, start=1)
         ],

@@ -12,6 +12,8 @@ export function RetrievalWorkspace() {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<RetrievalMode>("hybrid");
   const [topK, setTopK] = useState(8);
+  const [rerankerEnabled, setRerankerEnabled] = useState(false);
+  const [rerankerCandidateLimit, setRerankerCandidateLimit] = useState(40);
   const [response, setResponse] = useState<RetrievalResponse | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -47,7 +49,9 @@ export function RetrievalWorkspace() {
         top_k: topK,
         vector_weight: 0.65,
         keyword_weight: 0.35,
-        similarity_threshold: 0
+        similarity_threshold: 0,
+        reranker_enabled: rerankerEnabled,
+        reranker_candidate_limit: rerankerCandidateLimit
       });
       setResponse(result);
     } catch (runError) {
@@ -120,6 +124,7 @@ export function RetrievalWorkspace() {
             <div className="retrieval-query-actions">
               <span>
                 {mode} · top {topK}
+                {rerankerEnabled ? " · rerank" : ""}
               </span>
               <button
                 disabled={isRunning || !selectedProjectId || !query.trim()}
@@ -166,6 +171,25 @@ export function RetrievalWorkspace() {
                 onChange={(event) => setTopK(Number(event.target.value))}
                 type="number"
                 value={topK}
+              />
+            </label>
+            <label className="checkbox-label">
+              <input
+                checked={rerankerEnabled}
+                onChange={(event) => setRerankerEnabled(event.target.checked)}
+                type="checkbox"
+              />
+              Reranker
+            </label>
+            <label>
+              Rerank candidates
+              <input
+                disabled={!rerankerEnabled}
+                max={200}
+                min={1}
+                onChange={(event) => setRerankerCandidateLimit(Number(event.target.value))}
+                type="number"
+                value={rerankerCandidateLimit}
               />
             </label>
           </section>

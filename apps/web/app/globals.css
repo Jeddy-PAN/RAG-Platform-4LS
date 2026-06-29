@@ -933,6 +933,18 @@ h1 {
   resize: vertical;
 }
 
+.tool-modal .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-modal .checkbox-label input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
 .tool-modal > button {
   min-height: 36px;
   border: 1px solid var(--foreground);
