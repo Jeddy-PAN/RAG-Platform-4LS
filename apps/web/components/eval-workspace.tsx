@@ -44,6 +44,7 @@ export function EvalWorkspace() {
   const [topK, setTopK] = useState(8);
   const [rerankerEnabled, setRerankerEnabled] = useState(false);
   const [rerankerCandidateLimit, setRerankerCandidateLimit] = useState(40);
+  const [judgeEnabled, setJudgeEnabled] = useState(false);
   const [runs, setRuns] = useState<EvalRunSummary[]>([]);
   const [run, setRun] = useState<EvalRun | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -227,7 +228,8 @@ export function EvalWorkspace() {
         vector_weight: 0.65,
         keyword_weight: 0.35,
         reranker_enabled: rerankerEnabled,
-        reranker_candidate_limit: rerankerCandidateLimit
+        reranker_candidate_limit: rerankerCandidateLimit,
+        judge_enabled: judgeEnabled
       });
       setRun(result);
       await refreshRuns(selectedProjectId, selectedDatasetId);
@@ -496,6 +498,7 @@ export function EvalWorkspace() {
               <span>
                 {mode} · top {topK}
                 {rerankerEnabled ? " · rerank" : ""}
+                {judgeEnabled ? " · judge" : ""}
               </span>
               <button
                 disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}
@@ -526,6 +529,10 @@ export function EvalWorkspace() {
                   <strong>{formatRate(run.metrics.answer_match_rate)}</strong>
                 </div>
                 <div>
+                  <span>Judge</span>
+                  <strong>{formatRate(run.metrics.judge_match_rate)}</strong>
+                </div>
+                <div>
                   <span>Avg retrieval</span>
                   <strong>{formatLatency(run.metrics.avg_retrieval_latency_ms)}</strong>
                 </div>
@@ -542,6 +549,20 @@ export function EvalWorkspace() {
                       hit {String(result.hit)} · citation {String(result.citation_covered)} ·
                       answer {String(result.answer_matched)} · refused {String(result.refused)}
                     </div>
+                    {result.result_metadata.judge_enabled ? (
+                      <div className="score-row">
+                        judge {String(result.result_metadata.judge_passed ?? false)}
+                        {typeof result.result_metadata.judge_score === "number"
+                          ? ` · ${result.result_metadata.judge_score.toFixed(2)}`
+                          : ""}
+                        {result.result_metadata.judge_reason
+                          ? ` · ${result.result_metadata.judge_reason}`
+                          : ""}
+                        {result.result_metadata.judge_error
+                          ? ` · ${result.result_metadata.judge_error}`
+                          : ""}
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ol>
@@ -681,6 +702,14 @@ export function EvalWorkspace() {
                     type="number"
                     value={rerankerCandidateLimit}
                   />
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    checked={judgeEnabled}
+                    onChange={(event) => setJudgeEnabled(event.target.checked)}
+                    type="checkbox"
+                  />
+                  LLM judge
                 </label>
                 <button
                   disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}

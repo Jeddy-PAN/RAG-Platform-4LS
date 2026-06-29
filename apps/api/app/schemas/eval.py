@@ -86,6 +86,7 @@ class EvalRunCreate(BaseModel):
     keyword_weight: float = Field(default=0.35, ge=0, le=1)
     reranker_enabled: bool = False
     reranker_candidate_limit: int = Field(default=40, ge=1, le=200)
+    judge_enabled: bool = False
 
     @model_validator(mode="after")
     def validate_weights(self) -> "EvalRunCreate":

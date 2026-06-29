@@ -1,5 +1,6 @@
 from app.models.eval import EvalDataset, EvalQuestion, EvalResult, EvalRunStatus
 from app.models.retrieval import RetrievalLog
+import app.services.eval as eval_service
 from app.services.eval import _answer_matches
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
@@ -23,6 +24,38 @@ class FakeNoAnswerChatProvider:
             content="根据所提供的知识库内容，无法说明公司本季度的销售收入。",
             model="fake-no-answer-chat",
         )
+
+
+class FakeJudgeChatProvider:
+    """Return a normal answer first, then a deterministic judge verdict."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_chat_completion(self, messages, temperature=0.1):
+        self.calls += 1
+        if self.calls == 1:
+            return ChatProviderResult(
+                content="Sycamore made a narrow 2019 quantum supremacy claim.",
+                model="fake-answer",
+            )
+        return ChatProviderResult(
+            content='{"passed": true, "score": 1.0, "reason": "Covers the expected claim."}',
+            model="fake-judge",
+        )
+
+
+class FakeBrokenJudgeChatProvider(FakeJudgeChatProvider):
+    """Return invalid judge JSON after a valid generated answer."""
+
+    def generate_chat_completion(self, messages, temperature=0.1):
+        self.calls += 1
+        if self.calls == 1:
+            return ChatProviderResult(
+                content="Sycamore made a narrow 2019 quantum supremacy claim.",
+                model="fake-answer",
+            )
+        return ChatProviderResult(content="not json", model="fake-judge")
 
 
 def test_eval_api_creates_dataset_and_question(api_client, sqlite_session_factory) -> None:
@@ -195,6 +228,122 @@ def test_eval_api_passes_reranker_options_to_retrieval(
         log = db.query(RetrievalLog).one()
         assert log.retrieval_metadata["reranker_enabled"] is True
         assert log.retrieval_metadata["reranker"] == "keyword_overlap"
+
+
+def test_eval_api_can_run_llm_judge(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Eval runs should optionally store LLM judge verdicts and metrics."""
+
+    with sqlite_session_factory() as db:
+        project, document, chunk = seed_retrieval_chunk(
+            db,
+            "eval-judge",
+            "Google Sycamore claimed quantum supremacy in 2019.",
+            [0.1] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+        document_id = document.id
+        chunk_id = chunk.id
+
+    dataset = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets",
+        json={"name": "Judge Eval"},
+    ).json()
+    api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={
+            "question": "What did Google Sycamore claim in 2019?",
+            "expected_document_id": str(document_id),
+            "expected_chunk_id": str(chunk_id),
+            "expected_answer_notes": "quantum supremacy",
+        },
+    )
+
+    provider = FakeJudgeChatProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+    monkeypatch.setattr(eval_service, "get_eval_judge_provider", lambda: provider, raising=False)
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={"retrieval_mode": "hybrid", "top_k": 3, "judge_enabled": True},
+    )
+
+    assert response.status_code == 201
+    run = response.json()
+    result_metadata = run["results"][0]["result_metadata"]
+    assert run["metrics"]["judge_match_rate"] == 1.0
+    assert result_metadata["judge_enabled"] is True
+    assert result_metadata["judge_passed"] is True
+    assert result_metadata["judge_score"] == 1.0
+    assert result_metadata["judge_reason"] == "Covers the expected claim."
+
+
+def test_eval_api_records_judge_errors_without_failing_run(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Invalid judge output should be recorded while preserving the eval run."""
+
+    with sqlite_session_factory() as db:
+        project, document, chunk = seed_retrieval_chunk(
+            db,
+            "eval-judge-error",
+            "Google Sycamore claimed quantum supremacy in 2019.",
+            [0.1] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+        document_id = document.id
+        chunk_id = chunk.id
+
+    dataset = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets",
+        json={"name": "Judge Error Eval"},
+    ).json()
+    api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={
+            "question": "What did Google Sycamore claim in 2019?",
+            "expected_document_id": str(document_id),
+            "expected_chunk_id": str(chunk_id),
+            "expected_answer_notes": "quantum supremacy",
+        },
+    )
+
+    provider = FakeBrokenJudgeChatProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+    monkeypatch.setattr(eval_service, "get_eval_judge_provider", lambda: provider, raising=False)
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={"retrieval_mode": "hybrid", "top_k": 3, "judge_enabled": True},
+    )
+
+    assert response.status_code == 201
+    run = response.json()
+    result_metadata = run["results"][0]["result_metadata"]
+    assert run["status"] == EvalRunStatus.completed
+    assert result_metadata["judge_enabled"] is True
+    assert "judge_error" in result_metadata
 
 
 def test_eval_api_lists_and_gets_run_history(

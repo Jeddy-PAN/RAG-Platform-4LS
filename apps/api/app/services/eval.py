@@ -15,6 +15,7 @@ from app.rag.answering import NO_ANSWER_MESSAGE, generate_answer
 from app.rag.providers.chat import ChatProviderError
 from app.rag.retrieval.service import run_retrieval
 from app.schemas.eval import EvalDatasetCreate, EvalQuestionCreate, EvalRunCreate
+from app.services.eval_judge import get_eval_judge_provider, judge_answer
 
 
 def _get_project(db: Session, project_id: uuid.UUID) -> Project:
@@ -415,6 +416,12 @@ def _aggregate_metrics(results: list[EvalResult]) -> dict:
         for result in results
         if result.retrieval_latency_ms is not None
     ]
+    judged_results = [
+        result
+        for result in results
+        if result.result_metadata.get("judge_enabled") is True
+        and "judge_passed" in result.result_metadata
+    ]
     return {
         "question_count": count,
         "hit_rate": sum(1 for result in results if result.hit) / count,
@@ -429,6 +436,12 @@ def _aggregate_metrics(results: list[EvalResult]) -> dict:
         "avg_retrieval_latency_ms": (
             sum(retrieval_latencies) / len(retrieval_latencies)
             if retrieval_latencies
+            else 0.0
+        ),
+        "judge_match_rate": (
+            sum(1 for result in judged_results if result.result_metadata.get("judge_passed") is True)
+            / len(judged_results)
+            if judged_results
             else 0.0
         ),
     }
@@ -472,6 +485,7 @@ def run_dataset(
 
     results: list[EvalResult] = []
     try:
+        judge_provider = get_eval_judge_provider() if payload.judge_enabled else None
         for question in questions:
             retrieval = run_retrieval(
                 db,
@@ -513,10 +527,35 @@ def run_dataset(
                 if question.should_answer
                 else refused
             )
+            judge_metadata = {"judge_enabled": payload.judge_enabled}
+            judge_passed = None
+            if payload.judge_enabled:
+                try:
+                    judge = judge_answer(
+                        question=question.question,
+                        expected_notes=question.expected_answer_notes,
+                        answer=answer.answer,
+                        should_answer=question.should_answer,
+                        provider=judge_provider,
+                    )
+                    judge_passed = judge.passed
+                    judge_metadata.update(
+                        {
+                            "judge_passed": judge.passed,
+                            "judge_score": judge.score,
+                            "judge_reason": judge.reason,
+                            "judge_model": judge.model,
+                            "judge_raw_response": judge.raw_response,
+                        }
+                    )
+                except ChatProviderError as exc:
+                    judge_metadata["judge_error"] = str(exc)
             if question.should_answer:
-                score = 1.0 if hit and citation_covered and answer_matched else 0.0
+                answer_quality_passed = judge_passed if judge_passed is not None else answer_matched
+                score = 1.0 if hit and citation_covered and answer_quality_passed else 0.0
             else:
-                score = 1.0 if answer_matched else 0.0
+                answer_quality_passed = judge_passed if judge_passed is not None else answer_matched
+                score = 1.0 if answer_quality_passed else 0.0
             result = EvalResult(
                 project_id=project_id,
                 run_id=run.id,
@@ -535,6 +574,7 @@ def run_dataset(
                     "answer_matched": answer_matched,
                     "retrieved_chunk_ids": [str(chunk_id) for chunk_id in retrieved_chunk_ids],
                     "citation_chunk_ids": [str(chunk_id) for chunk_id in citation_chunk_ids],
+                    **judge_metadata,
                 },
             )
             db.add(result)

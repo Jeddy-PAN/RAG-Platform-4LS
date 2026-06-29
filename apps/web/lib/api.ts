@@ -196,6 +196,7 @@ export const evalApi = {
       keyword_weight: number;
       reranker_enabled?: boolean;
       reranker_candidate_limit?: number;
+      judge_enabled?: boolean;
     }
   ) =>
     jsonRequest<EvalRun>(

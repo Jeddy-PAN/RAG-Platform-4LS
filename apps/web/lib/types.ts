@@ -143,7 +143,14 @@ export type EvalResult = {
   retrieval_latency_ms: number | null;
   generation_latency_ms: number | null;
   score: number | null;
-  result_metadata: Record<string, unknown>;
+  result_metadata: Record<string, unknown> & {
+    judge_enabled?: boolean;
+    judge_passed?: boolean;
+    judge_score?: number;
+    judge_reason?: string;
+    judge_model?: string;
+    judge_error?: string;
+  };
 };
 
 export type EvalRun = {
