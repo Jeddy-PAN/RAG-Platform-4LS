@@ -11,6 +11,7 @@ import type {
   FeedbackResponse,
   Project,
   RetrievalMode,
+  RetrievalLog,
   RetrievalResponse,
   SystemConfig,
   UUID
@@ -147,7 +148,9 @@ export const retrievalApi = {
       reranker_enabled?: boolean;
       reranker_candidate_limit?: number;
     }
-  ) => jsonRequest<RetrievalResponse>(`/api/projects/${projectId}/retrieval/query`, "POST", payload)
+  ) => jsonRequest<RetrievalResponse>(`/api/projects/${projectId}/retrieval/query`, "POST", payload),
+  getLog: (projectId: UUID, logId: UUID) =>
+    request<RetrievalLog>(`/api/projects/${projectId}/retrieval/logs/${logId}`)
 };
 
 export const evalApi = {

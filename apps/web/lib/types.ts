@@ -108,6 +108,19 @@ export type RetrievalResponse = {
   retrieval_log_id: UUID;
 };
 
+export type RetrievalLog = {
+  id: UUID;
+  project_id: UUID;
+  query: string;
+  mode: RetrievalMode;
+  top_k: number;
+  latency_ms: number | null;
+  retrieval_metadata: Record<string, unknown>;
+  chunks: RetrievalResult[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type EvalDataset = {
   id: UUID;
   project_id: UUID;
@@ -144,6 +157,9 @@ export type EvalResult = {
   generation_latency_ms: number | null;
   score: number | null;
   result_metadata: Record<string, unknown> & {
+    retrieval_log_id?: UUID;
+    retrieved_chunk_ids?: UUID[];
+    citation_chunk_ids?: UUID[];
     judge_enabled?: boolean;
     judge_passed?: boolean;
     judge_score?: number;

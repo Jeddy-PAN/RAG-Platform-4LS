@@ -1,5 +1,6 @@
 from typing import Annotated
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -55,3 +56,33 @@ class RetrievalQueryResponse(BaseModel):
     latency_ms: int
     results: list[RetrievalResultRead]
     retrieval_log_id: uuid.UUID
+
+
+class RetrievalLogChunkRead(BaseModel):
+    """Chunk evidence stored for one retrieval log."""
+
+    rank: int
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_name: str
+    chunk_index: int
+    text_preview: str
+    vector_score: float | None
+    keyword_score: float | None
+    fused_score: float | None
+    score_metadata: dict
+
+
+class RetrievalLogRead(BaseModel):
+    """Detailed retrieval log with ranked chunk evidence."""
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    query: str
+    mode: RetrievalMode
+    top_k: int
+    latency_ms: int | None
+    retrieval_metadata: dict
+    chunks: list[RetrievalLogChunkRead]
+    created_at: datetime
+    updated_at: datetime

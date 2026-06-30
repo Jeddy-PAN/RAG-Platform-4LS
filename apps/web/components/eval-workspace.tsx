@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { documentsApi, evalApi, projectsApi } from "@/lib/api";
+import { documentsApi, evalApi, projectsApi, retrievalApi } from "@/lib/api";
+import { shortId } from "@/lib/format";
 import type {
   DocumentItem,
   EvalDataset,
@@ -9,6 +10,7 @@ import type {
   EvalRun,
   EvalRunSummary,
   Project,
+  RetrievalLog,
   RetrievalMode,
   UUID
 } from "@/lib/types";
@@ -47,8 +49,10 @@ export function EvalWorkspace() {
   const [judgeEnabled, setJudgeEnabled] = useState(false);
   const [runs, setRuns] = useState<EvalRunSummary[]>([]);
   const [run, setRun] = useState<EvalRun | null>(null);
+  const [selectedRetrievalLog, setSelectedRetrievalLog] = useState<RetrievalLog | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
+  const [isLoadingRetrievalLog, setIsLoadingRetrievalLog] = useState(false);
   const [evalEditMode, setEvalEditMode] = useState(false);
   const [busyEvalIds, setBusyEvalIds] = useState<Set<UUID>>(new Set());
   const [modal, setModal] = useState<"dataset" | "question" | "run" | null>(null);
@@ -95,6 +99,7 @@ export function EvalWorkspace() {
     }
 
     setRun(null);
+    setSelectedRetrievalLog(null);
     setDatasets([]);
     setSelectedDatasetId("");
     if (selectedProjectId) {
@@ -130,6 +135,7 @@ export function EvalWorkspace() {
     }
 
     setRun(null);
+    setSelectedRetrievalLog(null);
     setRuns([]);
     setQuestions([]);
     if (selectedProjectId && selectedDatasetId) {
@@ -232,6 +238,7 @@ export function EvalWorkspace() {
         judge_enabled: judgeEnabled
       });
       setRun(result);
+      setSelectedRetrievalLog(null);
       await refreshRuns(selectedProjectId, selectedDatasetId);
       setModal(null);
     } catch (runError) {
@@ -251,6 +258,7 @@ export function EvalWorkspace() {
     try {
       const result = await evalApi.getRun(selectedProjectId, selectedDatasetId, runId);
       setRun(result);
+      setSelectedRetrievalLog(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load eval run");
     } finally {
@@ -269,6 +277,7 @@ export function EvalWorkspace() {
       await evalApi.deleteDataset(selectedProjectId, dataset.id);
       await refreshDatasets(selectedProjectId);
       setRun(null);
+      setSelectedRetrievalLog(null);
       setRuns([]);
       setQuestions([]);
     } catch (deleteError) {
@@ -279,6 +288,23 @@ export function EvalWorkspace() {
         next.delete(dataset.id);
         return next;
       });
+    }
+  }
+
+  async function loadRetrievalLog(logId: UUID | undefined) {
+    if (!selectedProjectId || !logId) {
+      return;
+    }
+
+    setIsLoadingRetrievalLog(true);
+    setError(null);
+    try {
+      const log = await retrievalApi.getLog(selectedProjectId, logId);
+      setSelectedRetrievalLog(log);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load retrieval log");
+    } finally {
+      setIsLoadingRetrievalLog(false);
     }
   }
 
@@ -548,7 +574,20 @@ export function EvalWorkspace() {
                     <div className="score-row">
                       hit {String(result.hit)} · citation {String(result.citation_covered)} ·
                       answer {String(result.answer_matched)} · refused {String(result.refused)}
+                      {result.result_metadata.retrieval_log_id
+                        ? ` · log ${shortId(result.result_metadata.retrieval_log_id)}`
+                        : ""}
                     </div>
+                    {result.result_metadata.retrieval_log_id ? (
+                      <button
+                        className="mini-button"
+                        disabled={isLoadingRetrievalLog}
+                        onClick={() => loadRetrievalLog(result.result_metadata.retrieval_log_id)}
+                        type="button"
+                      >
+                        {isLoadingRetrievalLog ? "Loading log" : "View retrieval log"}
+                      </button>
+                    ) : null}
                     {result.result_metadata.judge_enabled ? (
                       <div className="score-row">
                         judge {String(result.result_metadata.judge_passed ?? false)}
@@ -566,6 +605,36 @@ export function EvalWorkspace() {
                   </li>
                 ))}
               </ol>
+              {selectedRetrievalLog ? (
+                <div className="retrieval-log-detail">
+                  <div className="result-heading">
+                    <strong>Retrieval log {shortId(selectedRetrievalLog.id)}</strong>
+                    <span>
+                      {selectedRetrievalLog.mode} · top {selectedRetrievalLog.top_k} ·{" "}
+                      {selectedRetrievalLog.latency_ms ?? 0}ms
+                    </span>
+                  </div>
+                  <p>{selectedRetrievalLog.query}</p>
+                  <ol>
+                    {selectedRetrievalLog.chunks.map((chunk) => (
+                      <li key={chunk.chunk_id}>
+                        <div className="result-heading">
+                          <strong>
+                            #{chunk.rank} {chunk.document_name}
+                          </strong>
+                          <span>chunk {chunk.chunk_index}</span>
+                        </div>
+                        <p>{chunk.text_preview}</p>
+                        <div className="score-row">
+                          fused {chunk.fused_score?.toFixed(4) ?? "n/a"} · vector{" "}
+                          {chunk.vector_score?.toFixed(4) ?? "n/a"} · keyword{" "}
+                          {chunk.keyword_score?.toFixed(4) ?? "n/a"}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
             </section>
           )}
         </div>

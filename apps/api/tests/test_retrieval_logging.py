@@ -112,3 +112,123 @@ def test_retrieval_log_accepts_numpy_scores(sqlite_session_factory) -> None:
     assert log_chunk.vector_score == 0.75
     assert log_chunk.fused_score == 0.75
     assert log_chunk.score_metadata == {"normalized_vector_score": 1.0}
+
+
+def test_retrieval_log_detail_api_returns_ranked_chunks(
+    api_client,
+    sqlite_session_factory,
+) -> None:
+    """Retrieval log detail should expose request settings and ranked chunk evidence."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name="Log Detail")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="source.txt",
+            storage_path="/tmp/source.txt",
+            file_size_bytes=20,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        first = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=0,
+            text="first ranked chunk",
+            content_hash=str(uuid.uuid4()),
+            embedding=[0.1] * 1024,
+        )
+        second = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=1,
+            text="second ranked chunk",
+            content_hash=str(uuid.uuid4()),
+            embedding=[0.2] * 1024,
+        )
+        db.add_all([first, second])
+        db.flush()
+        log = create_retrieval_log(
+            db=db,
+            project_id=project.id,
+            query="ranked",
+            mode=RetrievalMode.hybrid,
+            top_k=2,
+            latency_ms=15,
+            metadata={"reranker_enabled": True},
+            results=[
+                RetrievalCandidate(
+                    chunk_id=second.id,
+                    document_id=document.id,
+                    document_name=document.filename,
+                    chunk_index=second.chunk_index,
+                    text=second.text,
+                    source_metadata={},
+                    vector_score=0.5,
+                    keyword_score=0.9,
+                    fused_score=0.8,
+                    rank=2,
+                    score_metadata={"pre_rerank_rank": 1},
+                ),
+                RetrievalCandidate(
+                    chunk_id=first.id,
+                    document_id=document.id,
+                    document_name=document.filename,
+                    chunk_index=first.chunk_index,
+                    text=first.text,
+                    source_metadata={},
+                    vector_score=0.7,
+                    keyword_score=0.4,
+                    fused_score=0.6,
+                    rank=1,
+                    score_metadata={"pre_rerank_rank": 2},
+                ),
+            ],
+        )
+        project_id = project.id
+        log_id = log.id
+
+    response = api_client.get(f"/api/projects/{project_id}/retrieval/logs/{log_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(log_id)
+    assert body["query"] == "ranked"
+    assert body["mode"] == "hybrid"
+    assert body["top_k"] == 2
+    assert body["retrieval_metadata"] == {"reranker_enabled": True}
+    assert [chunk["rank"] for chunk in body["chunks"]] == [1, 2]
+    assert body["chunks"][0]["text_preview"] == "first ranked chunk"
+    assert body["chunks"][0]["document_name"] == "source.txt"
+    assert body["chunks"][0]["score_metadata"] == {"pre_rerank_rank": 2}
+
+
+def test_retrieval_log_detail_is_project_scoped(
+    api_client,
+    sqlite_session_factory,
+) -> None:
+    """Retrieval log detail should not cross project boundaries."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name="Owner")
+        other_project = Project(name="Other")
+        db.add_all([project, other_project])
+        db.flush()
+        log = RetrievalLog(
+            project_id=project.id,
+            query="alpha",
+            mode=RetrievalMode.keyword,
+            top_k=1,
+            retrieval_metadata={},
+        )
+        db.add(log)
+        db.commit()
+        other_project_id = other_project.id
+        log_id = log.id
+
+    response = api_client.get(f"/api/projects/{other_project_id}/retrieval/logs/{log_id}")
+
+    assert response.status_code == 404

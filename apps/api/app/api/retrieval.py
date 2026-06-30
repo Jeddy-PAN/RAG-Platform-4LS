@@ -2,12 +2,18 @@ import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.models.chunk import Chunk
+from app.models.document import Document
+from app.models.retrieval import RetrievalLog, RetrievalLogChunk
 from app.rag.retrieval.service import run_retrieval
 from app.schemas.retrieval import (
+    RetrievalLogChunkRead,
+    RetrievalLogRead,
     RetrievalQueryRequest,
     RetrievalQueryResponse,
     RetrievalResultRead,
@@ -79,4 +85,62 @@ def query_retrieval(
             )
             for index, candidate in enumerate(result.results, start=1)
         ],
+    )
+
+
+@router.get("/logs/{log_id}", response_model=RetrievalLogRead)
+def get_retrieval_log(
+    project_id: uuid.UUID,
+    log_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> RetrievalLogRead:
+    """Return one retrieval log and its ranked chunk evidence."""
+
+    log = db.scalar(
+        select(RetrievalLog).where(
+            RetrievalLog.id == log_id,
+            RetrievalLog.project_id == project_id,
+        )
+    )
+    if log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Retrieval log not found",
+        )
+
+    rows = db.execute(
+        select(RetrievalLogChunk, Chunk, Document)
+        .join(Chunk, Chunk.id == RetrievalLogChunk.chunk_id)
+        .join(Document, Document.id == Chunk.document_id)
+        .where(
+            RetrievalLogChunk.retrieval_log_id == log.id,
+            RetrievalLogChunk.project_id == project_id,
+        )
+        .order_by(RetrievalLogChunk.rank.asc())
+    ).all()
+    return RetrievalLogRead(
+        id=log.id,
+        project_id=log.project_id,
+        query=log.query,
+        mode=log.mode,
+        top_k=log.top_k,
+        latency_ms=log.latency_ms,
+        retrieval_metadata=_json_safe(log.retrieval_metadata),
+        chunks=[
+            RetrievalLogChunkRead(
+                rank=log_chunk.rank,
+                chunk_id=chunk.id,
+                document_id=document.id,
+                document_name=document.filename,
+                chunk_index=chunk.chunk_index,
+                text_preview=chunk.text[:500],
+                vector_score=_optional_float(log_chunk.vector_score),
+                keyword_score=_optional_float(log_chunk.keyword_score),
+                fused_score=_optional_float(log_chunk.fused_score),
+                score_metadata=_json_safe(log_chunk.score_metadata),
+            )
+            for log_chunk, chunk, document in rows
+        ],
+        created_at=log.created_at,
+        updated_at=log.updated_at,
     )

@@ -1055,6 +1055,24 @@ h1 {
   line-height: 1.55;
 }
 
+.retrieval-log-detail {
+  margin: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.retrieval-log-detail > .result-heading,
+.retrieval-log-detail > p {
+  padding: 14px 16px 0;
+}
+
+.retrieval-log-detail > ol {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
 .eval-inline {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
