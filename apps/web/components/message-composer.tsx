@@ -1,7 +1,8 @@
 "use client";
 
-import type { FormEvent } from "react";
-import { useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { getAutosizeTextareaHeight } from "@/lib/textarea-autosize";
 
 type MessageComposerProps = {
   disabled: boolean;
@@ -11,6 +12,25 @@ type MessageComposerProps = {
 
 export function MessageComposer({ disabled, isSending, onSend }: MessageComposerProps) {
   const [message, setMessage] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  function resizeTextarea() {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    textarea.style.height = getAutosizeTextareaHeight(textarea.scrollHeight);
+  }
+
+  function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    setMessage(event.target.value);
+  }
+
+  useLayoutEffect(() => {
+    resizeTextarea();
+  }, [message]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,7 +52,7 @@ export function MessageComposer({ disabled, isSending, onSend }: MessageComposer
       <textarea
         disabled={disabled || isSending}
         id="chat-message"
-        onChange={(event) => setMessage(event.target.value)}
+        onChange={handleChange}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
@@ -40,6 +60,7 @@ export function MessageComposer({ disabled, isSending, onSend }: MessageComposer
           }
         }}
         placeholder={disabled ? "Select a project to chat" : "Ask across the selected project"}
+        ref={textareaRef}
         rows={2}
         value={message}
       />

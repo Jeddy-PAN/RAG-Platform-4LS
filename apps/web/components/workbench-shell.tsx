@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { chatApi, documentsApi, feedbackApi, projectsApi, systemApi } from "@/lib/api";
+import { getNextExpandedProjectIds, openOnlyProject } from "@/lib/project-expansion";
 import type {
   ChatMessage,
   DocumentItem,
@@ -73,7 +74,7 @@ export function WorkbenchShell() {
       if (!activeProjectId && nextProjects.length > 0) {
         const firstProjectId = nextProjects[0].id;
         setActiveProjectId(firstProjectId);
-        setExpandedProjectIds((current) => new Set(current).add(firstProjectId));
+        setExpandedProjectIds(openOnlyProject(firstProjectId));
         void loadDocuments(firstProjectId);
       }
     } catch (error) {
@@ -121,7 +122,7 @@ export function WorkbenchShell() {
       const project = await projectsApi.create({ name: name.trim() });
       setProjects((current) => [project, ...current]);
       setActiveProjectId(project.id);
-      setExpandedProjectIds((current) => new Set(current).add(project.id));
+      setExpandedProjectIds(openOnlyProject(project.id));
       setDocumentsByProject((current) => ({ ...current, [project.id]: [] }));
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to create project");
@@ -169,25 +170,17 @@ export function WorkbenchShell() {
     setActiveProjectId(projectId);
     setConversationId(null);
     setMessages([]);
-    setExpandedProjectIds((current) => new Set(current).add(projectId));
+    setExpandedProjectIds(openOnlyProject(projectId));
     if (!documentsByProject[projectId]) {
       void loadDocuments(projectId);
     }
   }
 
   function handleToggleExpand(projectId: UUID) {
-    setExpandedProjectIds((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-        if (!documentsByProject[projectId]) {
-          void loadDocuments(projectId);
-        }
-      }
-      return next;
-    });
+    setExpandedProjectIds((current) => getNextExpandedProjectIds(current, projectId));
+    if (!expandedProjectIds.has(projectId) && !documentsByProject[projectId]) {
+      void loadDocuments(projectId);
+    }
   }
 
   async function handleUpload(files: File[]) {
@@ -206,7 +199,7 @@ export function WorkbenchShell() {
           ...(current[activeProjectId] ?? [])
         ]
       }));
-      setExpandedProjectIds((current) => new Set(current).add(activeProjectId));
+      setExpandedProjectIds(openOnlyProject(activeProjectId));
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to upload file");
     } finally {
@@ -224,7 +217,7 @@ export function WorkbenchShell() {
     try {
       await documentsApi.reindex(projectId, document.id);
       await loadDocuments(projectId);
-      setExpandedProjectIds((current) => new Set(current).add(projectId));
+      setExpandedProjectIds(openOnlyProject(projectId));
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to reindex document");
     } finally {

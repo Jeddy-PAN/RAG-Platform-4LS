@@ -29,7 +29,8 @@ import type {
   RetrievalMode,
   UUID
 } from "@/lib/types";
-import { ErrorState } from "./error-state";
+
+type EvalPanelView = "questions" | "history";
 
 function formatRate(value: number | undefined) {
   if (typeof value !== "number") {
@@ -114,6 +115,7 @@ export function EvalWorkspace() {
   const [evalEditMode, setEvalEditMode] = useState(false);
   const [busyEvalIds, setBusyEvalIds] = useState<Set<UUID>>(new Set());
   const [modal, setModal] = useState<"dataset" | "question" | "run" | null>(null);
+  const [panelView, setPanelView] = useState<EvalPanelView>("questions");
   const [error, setError] = useState<string | null>(null);
 
   const selectedProject = useMemo(
@@ -197,6 +199,15 @@ export function EvalWorkspace() {
     ],
     [compare.runs]
   );
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setError(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [error]);
 
   useEffect(() => {
     async function loadProjects() {
@@ -631,7 +642,7 @@ export function EvalWorkspace() {
                   </button>
                   {evalEditMode ? (
                     <button
-                      className="mini-button danger tool-row-action"
+                      className="mini-button danger"
                       disabled={busyEvalIds.has(dataset.id)}
                       onClick={() => deleteDataset(dataset)}
                       type="button"
@@ -644,102 +655,132 @@ export function EvalWorkspace() {
             </ul>
           )}
 
-          <div className="sidebar-heading eval-section-heading">
-            <div>
-              <span className="sidebar-label">Recent runs</span>
-              <strong>{runs.length}</strong>
-            </div>
-          </div>
-          {runs.length > 0 ? (
-            <div className="eval-run-list compact">
-              {runs.map((item) => {
-                const isCompareSelected = compareRunIds.includes(item.id);
-                const isCompareDisabled = !isCompareSelected && compareRunIds.length >= 4;
-                const isCompareLoading = loadingCompareRunIds.has(item.id);
-
-                return (
-                  <div
-                    className={run?.id === item.id ? "eval-run-row active" : "eval-run-row"}
-                    key={item.id}
-                  >
-                    <button
-                      className="eval-run-open"
-                      disabled={isLoadingRun}
-                      onClick={() => loadRunDetail(item.id)}
-                      type="button"
-                    >
-                      <span>
-                        {item.retrieval_mode} · top {item.top_k}
-                      </span>
-                      <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
-                      <small>
-                        {item.status} · {item.result_count} results
-                      </small>
-                    </button>
-                    <button
-                      aria-label={`${isCompareSelected ? "Remove from" : "Add to"} compare`}
-                      className={isCompareSelected ? "mini-button active" : "mini-button"}
-                      disabled={isCompareDisabled || isCompareLoading}
-                      onClick={() => toggleCompareRun(item.id)}
-                      type="button"
-                    >
-                      {isCompareLoading ? "..." : isCompareSelected ? "Added" : "+"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="sidebar-empty">No runs for this dataset.</p>
-          )}
         </aside>
 
         <div className="retrieval-workspace-panel">
-          {error ? <ErrorState message={error} /> : null}
+          {error ? (
+            <div className="eval-toast" role="status">
+              <span>{error}</span>
+              <button aria-label="Dismiss eval notice" onClick={() => setError(null)} type="button">
+                Close
+              </button>
+            </div>
+          ) : null}
           <section className="retrieval-query-panel">
             <div>
               <span className="sidebar-label">Eval target</span>
               <strong>{selectedDataset?.name ?? "No dataset selected"}</strong>
               <small>{selectedProject?.name ?? "No project selected"}</small>
             </div>
-            {selectedDataset ? (
-              <div className="eval-question-panel">
-                <div className="retrieval-summary">
-                  <strong>Questions</strong>
-                  <span>{questions.length}</span>
+            <div className="eval-panel-tabs" role="tablist" aria-label="Eval panels">
+              <button
+                aria-selected={panelView === "questions"}
+                className={panelView === "questions" ? "active" : ""}
+                onClick={() => setPanelView("questions")}
+                role="tab"
+                type="button"
+              >
+                Questions
+              </button>
+              <button
+                aria-selected={panelView === "history"}
+                className={panelView === "history" ? "active" : ""}
+                onClick={() => setPanelView("history")}
+                role="tab"
+                type="button"
+              >
+                History
+              </button>
+            </div>
+            {panelView === "questions" ? (
+              selectedDataset ? (
+                <div className="eval-question-panel">
+                  <div className="retrieval-summary">
+                    <strong>Questions</strong>
+                    <span>{questions.length}</span>
+                  </div>
+                  {questions.length === 0 ? (
+                    <p className="sidebar-empty">No questions in this dataset.</p>
+                  ) : (
+                    <ul className="eval-question-list">
+                      {questions.map((questionItem) => (
+                        <li key={questionItem.id}>
+                          <span>{questionItem.question}</span>
+                          <small>
+                            {questionItem.expected_document_id
+                              ? documentNamesById.get(questionItem.expected_document_id) ??
+                                questionItem.expected_document_id
+                              : "Any document"}
+                            {questionItem.expected_answer_notes
+                              ? ` · ${questionItem.expected_answer_notes}`
+                              : ""}
+                          </small>
+                          {evalEditMode ? (
+                            <button
+                              className="mini-button danger"
+                              disabled={busyEvalIds.has(questionItem.id)}
+                              onClick={() => deleteQuestion(questionItem)}
+                              type="button"
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                {questions.length === 0 ? (
-                  <p className="sidebar-empty">No questions in this dataset.</p>
-                ) : (
-                  <ul className="eval-question-list">
-                    {questions.map((questionItem) => (
-                      <li key={questionItem.id}>
-                        <span>{questionItem.question}</span>
-                        <small>
-                          {questionItem.expected_document_id
-                            ? documentNamesById.get(questionItem.expected_document_id) ??
-                              questionItem.expected_document_id
-                            : "Any document"}
-                          {questionItem.expected_answer_notes
-                            ? ` · ${questionItem.expected_answer_notes}`
-                            : ""}
-                        </small>
-                        {evalEditMode ? (
+              ) : null
+            ) : (
+              <div className="eval-history-panel">
+                <div className="retrieval-summary">
+                  <strong>History</strong>
+                  <span>{runs.length}</span>
+                </div>
+                {runs.length > 0 ? (
+                  <div className="eval-run-list compact">
+                    {runs.map((item) => {
+                      const isCompareSelected = compareRunIds.includes(item.id);
+                      const isCompareDisabled = !isCompareSelected && compareRunIds.length >= 4;
+                      const isCompareLoading = loadingCompareRunIds.has(item.id);
+
+                      return (
+                        <div
+                          className={run?.id === item.id ? "eval-run-row active" : "eval-run-row"}
+                          key={item.id}
+                        >
                           <button
-                            className="mini-button danger"
-                            disabled={busyEvalIds.has(questionItem.id)}
-                            onClick={() => deleteQuestion(questionItem)}
+                            className="eval-run-open"
+                            disabled={isLoadingRun}
+                            onClick={() => loadRunDetail(item.id)}
                             type="button"
                           >
-                            Delete
+                            <span>
+                              {item.retrieval_mode} · top {item.top_k}
+                            </span>
+                            <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
+                            <small>
+                              {item.status} · {item.result_count} results
+                            </small>
                           </button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
+                          <button
+                            aria-label={`${isCompareSelected ? "Remove from" : "Add to"} compare`}
+                            className={isCompareSelected ? "mini-button active" : "mini-button"}
+                            disabled={isCompareDisabled || isCompareLoading}
+                            onClick={() => toggleCompareRun(item.id)}
+                            type="button"
+                          >
+                            {isCompareLoading ? "..." : isCompareSelected ? "Added" : "+"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="sidebar-empty">No runs for this dataset.</p>
                 )}
               </div>
-            ) : null}
+            )}
             <div className="retrieval-query-actions">
               <span>
                 {mode} · top {topK}

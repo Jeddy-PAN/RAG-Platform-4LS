@@ -72,9 +72,11 @@ a {
 }
 
 .app-shell {
+  height: 100dvh;
   min-height: 100dvh;
   display: grid;
   grid-template-rows: 58px 1fr;
+  overflow: hidden;
 }
 
 .top-bar {
@@ -148,6 +150,7 @@ a {
 
 .workbench-layout {
   min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(288px, 330px) minmax(0, 1fr);
 }
@@ -265,6 +268,7 @@ a {
 .project-list {
   min-height: 0;
   overflow: auto;
+  padding-right: 2px;
 }
 
 .project-item {
@@ -320,6 +324,8 @@ a {
 }
 
 .file-tree {
+  max-height: clamp(160px, 28dvh, 320px);
+  overflow: auto;
   margin: 2px 0 8px 38px;
   border-left: 1px solid var(--border);
 }
@@ -436,6 +442,7 @@ a {
   position: relative;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   display: grid;
   place-items: center;
   padding: 28px;
@@ -483,7 +490,7 @@ h1 {
   width: min(760px, 100%);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  align-items: center;
   gap: 10px;
   padding: 10px;
   border: 1px solid var(--border);
@@ -510,9 +517,10 @@ h1 {
 }
 
 .message-composer textarea {
+  overflow-y: auto;
   min-height: 48px;
   max-height: 144px;
-  resize: vertical;
+  resize: none;
   padding: 12px;
   border-color: transparent;
   background: transparent;
@@ -557,8 +565,8 @@ h1 {
 
 .active-chat {
   width: min(920px, 100%);
-  height: calc(100dvh - 112px);
-  min-height: 520px;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
@@ -663,7 +671,7 @@ h1 {
 }
 
 .tool-fab-group {
-  position: absolute;
+  position: fixed;
   right: 24px;
   bottom: 24px;
   z-index: 5;
@@ -729,6 +737,12 @@ h1 {
   align-items: start;
 }
 
+.eval-page .retrieval-layout {
+  height: calc(100dvh - 138px);
+  min-height: 560px;
+  align-items: stretch;
+}
+
 .tool-page .retrieval-controls,
 .tool-page .retrieval-results,
 .tool-page .retrieval-empty {
@@ -787,6 +801,11 @@ h1 {
 .tool-sidebar {
   min-height: 420px;
   padding: 16px 12px;
+}
+
+.eval-sidebar {
+  min-height: 0;
+  overflow: auto;
 }
 
 .tool-list {
@@ -849,6 +868,14 @@ h1 {
 .retrieval-workspace-panel {
   display: grid;
   gap: 14px;
+}
+
+.eval-page .retrieval-workspace-panel {
+  position: relative;
+  min-height: 0;
+  align-content: start;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .retrieval-query-panel {
@@ -970,11 +997,82 @@ h1 {
   margin: 8px 0 -4px;
 }
 
-.eval-question-panel {
+.eval-toast {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  max-width: min(420px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px 9px 12px;
+  border: 1px solid rgba(181, 71, 8, 0.2);
+  border-radius: 999px;
+  color: var(--warning);
+  background: rgba(255, 250, 235, 0.94);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.eval-toast span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eval-toast button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(181, 71, 8, 0.18);
+  border-radius: 999px;
+  color: var(--warning);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.eval-panel-tabs {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.eval-panel-tabs button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted-strong);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.eval-panel-tabs button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.eval-question-panel,
+.eval-history-panel {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.48);
+}
+
+.eval-question-panel .eval-question-list,
+.eval-history-panel .eval-run-list {
+  max-height: clamp(220px, 34dvh, 420px);
+  overflow: auto;
 }
 
 .eval-question-list {
@@ -1348,6 +1446,8 @@ h1 {
 
 @media (max-width: 860px) {
   .app-shell {
+    height: auto;
+    overflow: visible;
     grid-template-rows: auto 1fr;
   }
 
@@ -1360,7 +1460,17 @@ h1 {
 
   .workbench-layout,
   .tool-page .retrieval-layout {
+    overflow: visible;
     grid-template-columns: 1fr;
+  }
+
+  .eval-page .retrieval-layout {
+    height: auto;
+    min-height: 0;
+  }
+
+  .eval-page .retrieval-workspace-panel {
+    overflow: visible;
   }
 
   .project-sidebar {
@@ -1370,6 +1480,7 @@ h1 {
   }
 
   .chat-workspace {
+    overflow: visible;
     min-height: 620px;
     padding: 22px 14px 76px;
   }
