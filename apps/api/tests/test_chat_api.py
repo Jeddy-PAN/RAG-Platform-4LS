@@ -1,6 +1,7 @@
 import uuid
 
 from app.models.conversation import Conversation, Message, MessageCitation
+from app.models.metrics import ChatRequestMetric
 from app.models.retrieval import RetrievalLog
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
@@ -105,6 +106,62 @@ def test_chat_api_passes_reranker_options_to_retrieval(
         log = db.query(RetrievalLog).one()
         assert log.retrieval_metadata["reranker_enabled"] is True
         assert log.retrieval_metadata["reranker"] == "keyword_overlap"
+
+
+def test_chat_metrics_api_records_and_summarizes_chat_requests(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Chat requests should be observable through project-scoped metrics."""
+
+    with sqlite_session_factory() as db:
+        project, _, _ = seed_retrieval_chunk(
+            db,
+            "chat-metrics",
+            "Escalation starts after triage.",
+            [0.1] * 1024,
+        )
+        db.commit()
+        project_id = project.id
+
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: FakeChatProvider(),
+    )
+
+    chat_response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "conversation_id": None,
+            "message": "What is escalation?",
+            "retrieval": {"mode": "hybrid", "top_k": 3},
+        },
+    )
+    metrics_response = api_client.get(f"/api/projects/{project_id}/metrics/chat")
+
+    assert chat_response.status_code == 200
+    assert metrics_response.status_code == 200
+    chat_body = chat_response.json()
+    metrics_body = metrics_response.json()
+    assert metrics_body["summary"]["request_count"] == 1
+    assert metrics_body["summary"]["avg_latency_ms"] >= 0
+    assert metrics_body["summary"]["avg_retrieval_latency_ms"] >= 0
+    assert metrics_body["summary"]["avg_generation_latency_ms"] >= 0
+    assert metrics_body["summary"]["avg_citation_count"] == 1
+    assert metrics_body["items"][0]["model"] == "fake-chat"
+    assert metrics_body["items"][0]["citation_count"] == 1
+    assert metrics_body["items"][0]["retrieval_log_id"] == chat_body["retrieval_log_id"]
+    assert metrics_body["items"][0]["conversation_id"] == chat_body["conversation_id"]
+
+    with sqlite_session_factory() as db:
+        metric = db.query(ChatRequestMetric).one()
+        assert metric.project_id == project_id
+        assert metric.citation_count == 1
 
 
 def test_chat_api_returns_refusal_without_retrieved_context(

@@ -72,6 +72,32 @@ export type ChatMessage = {
   model?: string;
 };
 
+export type ChatMetric = {
+  id: UUID;
+  project_id: UUID;
+  conversation_id: UUID;
+  retrieval_log_id: UUID;
+  model: string;
+  latency_ms: number;
+  retrieval_latency_ms: number | null;
+  generation_latency_ms: number | null;
+  citation_count: number;
+  created_at: string;
+};
+
+export type ChatMetricsSummary = {
+  request_count: number;
+  avg_latency_ms: number | null;
+  avg_retrieval_latency_ms: number | null;
+  avg_generation_latency_ms: number | null;
+  avg_citation_count: number | null;
+};
+
+export type ChatMetricsResponse = {
+  summary: ChatMetricsSummary;
+  items: ChatMetric[];
+};
+
 export type FeedbackRating = "positive" | "negative";
 
 export type FeedbackResponse = {

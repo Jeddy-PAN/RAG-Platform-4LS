@@ -18,14 +18,25 @@ def test_alembic_configuration_files_exist() -> None:
 def test_initial_migration_contains_search_vector_trigger() -> None:
     """Initial migration should define pgvector and chunk keyword search."""
 
-    migration_files = sorted((API_ROOT / "alembic" / "versions").glob("*.py"))
+    migration_file = API_ROOT / "alembic" / "versions" / "0001_initial_schema.py"
 
-    assert len(migration_files) == 1
-
-    migration_text = migration_files[0].read_text()
+    migration_text = migration_file.read_text()
     assert "CREATE EXTENSION IF NOT EXISTS vector" in migration_text
     assert "chunks_search_vector_update" in migration_text
     assert "to_tsvector('simple'" in migration_text
+
+
+def test_chat_metrics_migration_contains_request_observability_table() -> None:
+    """Chat metrics migration should add request-level observability storage."""
+
+    migration_file = API_ROOT / "alembic" / "versions" / "0002_chat_request_metrics.py"
+
+    migration_text = migration_file.read_text()
+    assert "chat_request_metrics" in migration_text
+    assert "latency_ms" in migration_text
+    assert "retrieval_latency_ms" in migration_text
+    assert "generation_latency_ms" in migration_text
+    assert "ix_chat_request_metrics_project_created" in migration_text
 
 
 @pytest.mark.integration

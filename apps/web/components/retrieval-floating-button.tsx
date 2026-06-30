@@ -7,6 +7,9 @@ export function RetrievalFloatingButton() {
       <a className="retrieval-fab" href="/eval">
         Eval
       </a>
+      <a className="retrieval-fab" href="/metrics">
+        Metrics
+      </a>
     </div>
   );
 }

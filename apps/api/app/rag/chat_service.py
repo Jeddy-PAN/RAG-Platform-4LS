@@ -11,6 +11,7 @@ from app.rag.citations import persist_citations
 from app.rag.providers.chat import ChatProviderError
 from app.rag.retrieval.service import run_retrieval
 from app.services.conversations import get_or_create_conversation, list_recent_messages
+from app.services.metrics import record_chat_metric
 from app.services.messages import create_message
 
 
@@ -56,6 +57,7 @@ def send_chat_message(
         reranker_enabled=reranker_enabled,
         reranker_candidate_limit=reranker_candidate_limit,
     )
+    generation_started = time.perf_counter()
     try:
         answer = generate_answer(
             question=message,
@@ -67,6 +69,7 @@ def send_chat_message(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    generation_latency_ms = int((time.perf_counter() - generation_started) * 1000)
 
     assistant_message = create_message(
         db,
@@ -88,6 +91,18 @@ def send_chat_message(
     db.refresh(user_message)
     db.refresh(assistant_message)
     latency_ms = int((time.perf_counter() - started) * 1000)
+    record_chat_metric(
+        db,
+        project_id=project_id,
+        conversation_id=conversation.id,
+        retrieval_log_id=retrieval.retrieval_log_id,
+        model=answer.model,
+        latency_ms=latency_ms,
+        retrieval_latency_ms=retrieval.latency_ms,
+        generation_latency_ms=generation_latency_ms,
+        citation_count=len(citations),
+    )
+    db.commit()
     return {
         "conversation": conversation,
         "user_message": user_message,

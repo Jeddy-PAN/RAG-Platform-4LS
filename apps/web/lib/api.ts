@@ -1,5 +1,6 @@
 import type {
   ChatMessageResponse,
+  ChatMetricsResponse,
   DocumentItem,
   DocumentUploadResponse,
   EvalDataset,
@@ -133,6 +134,11 @@ export const feedbackApi = {
       comment?: string | null;
     }
   ) => jsonRequest<FeedbackResponse>(`/api/projects/${projectId}/feedback`, "POST", payload)
+};
+
+export const metricsApi = {
+  chat: (projectId: UUID, limit = 50) =>
+    request<ChatMetricsResponse>(`/api/projects/${projectId}/metrics/chat?limit=${limit}`)
 };
 
 export const retrievalApi = {

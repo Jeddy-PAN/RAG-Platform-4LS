@@ -7,6 +7,7 @@ from app.api.documents import router as documents_router
 from app.api.eval import router as eval_router
 from app.api.feedback import router as feedback_router
 from app.api.health import router as health_router
+from app.api.metrics import router as metrics_router
 from app.api.projects import router as projects_router
 from app.api.retrieval import router as retrieval_router
 from app.api.system import router as system_router
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations_router)
     app.include_router(feedback_router)
     app.include_router(eval_router)
+    app.include_router(metrics_router)
     app.include_router(system_router)
     return app
 

@@ -25,3 +25,7 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    chat_request_metrics: Mapped[list["ChatRequestMetric"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
