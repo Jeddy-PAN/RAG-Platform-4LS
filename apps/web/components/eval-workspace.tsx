@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { documentsApi, evalApi, projectsApi, retrievalApi } from "@/lib/api";
 import {
+  buildEvalCompareCsv,
+  buildEvalRunCsv,
+  buildEvalRunJson,
+  buildExportFilename
+} from "@/lib/eval-export";
+import {
   buildEvalRunCompare,
   type EvalRunCompareCell
 } from "@/lib/eval-run-compare";
@@ -66,6 +72,16 @@ function getCellClassName(cell: EvalRunCompareCell) {
     return "eval-compare-cell refused";
   }
   return cell.answerMatched ? "eval-compare-cell pass" : "eval-compare-cell fail";
+}
+
+function downloadTextFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export function EvalWorkspace() {
@@ -328,6 +344,30 @@ export function EvalWorkspace() {
 
     setCompareRunIds((current) => [...current, runId]);
     void ensureCompareRunDetail(runId);
+  }
+
+  function exportRunCsv(currentRun: EvalRun) {
+    downloadTextFile(
+      buildExportFilename("eval run", currentRun.id, "csv"),
+      buildEvalRunCsv(currentRun),
+      "text/csv;charset=utf-8"
+    );
+  }
+
+  function exportRunJson(currentRun: EvalRun) {
+    downloadTextFile(
+      buildExportFilename("eval run", currentRun.id, "json"),
+      JSON.stringify(buildEvalRunJson(currentRun), null, 2),
+      "application/json;charset=utf-8"
+    );
+  }
+
+  function exportCompareCsv() {
+    downloadTextFile(
+      buildExportFilename("eval compare", compare.runs.map((item) => item.id).join("-"), "csv"),
+      buildEvalCompareCsv(compare),
+      "text/csv;charset=utf-8"
+    );
   }
 
   async function createDataset() {
@@ -724,9 +764,19 @@ export function EvalWorkspace() {
                     {compare.runs.length}/{compareRunIds.length} loaded
                   </strong>
                 </div>
-                <button className="mini-button" onClick={resetCompareState} type="button">
-                  Clear
-                </button>
+                <div className="eval-export-actions">
+                  <button
+                    className="mini-button"
+                    disabled={compare.runs.length < 2}
+                    onClick={exportCompareCsv}
+                    type="button"
+                  >
+                    Export CSV
+                  </button>
+                  <button className="mini-button" onClick={resetCompareState} type="button">
+                    Clear
+                  </button>
+                </div>
               </div>
               {compare.runs.length < 2 ? (
                 <p className="sidebar-empty">Select at least 2 runs to compare metrics and questions.</p>
@@ -801,6 +851,22 @@ export function EvalWorkspace() {
             </section>
           ) : (
             <section className="retrieval-results">
+              <div className="eval-run-toolbar">
+                <div>
+                  <span className="sidebar-label">Run detail</span>
+                  <strong>
+                    {run.retrieval_mode} · top {run.top_k}
+                  </strong>
+                </div>
+                <div className="eval-export-actions">
+                  <button className="mini-button" onClick={() => exportRunCsv(run)} type="button">
+                    Export CSV
+                  </button>
+                  <button className="mini-button" onClick={() => exportRunJson(run)} type="button">
+                    Export JSON
+                  </button>
+                </div>
+              </div>
               <div className="eval-metrics">
                 <div>
                   <span>Hit rate</span>
