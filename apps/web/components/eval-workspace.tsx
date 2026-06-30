@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { documentsApi, evalApi, projectsApi, retrievalApi } from "@/lib/api";
+import {
+  buildEvalResultFilterOptions,
+  filterEvalResults,
+  type EvalResultFilter
+} from "@/lib/eval-result-filters";
 import { shortId } from "@/lib/format";
 import type {
   DocumentItem,
@@ -23,7 +28,7 @@ function formatRate(value: number | undefined) {
   return `${Math.round(value * 100)}%`;
 }
 
-function formatLatency(value: number | undefined) {
+function formatLatency(value: number | null | undefined) {
   if (typeof value !== "number") {
     return "0 ms";
   }
@@ -49,6 +54,7 @@ export function EvalWorkspace() {
   const [judgeEnabled, setJudgeEnabled] = useState(false);
   const [runs, setRuns] = useState<EvalRunSummary[]>([]);
   const [run, setRun] = useState<EvalRun | null>(null);
+  const [resultFilter, setResultFilter] = useState<EvalResultFilter>("all");
   const [selectedRetrievalLog, setSelectedRetrievalLog] = useState<RetrievalLog | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
@@ -72,6 +78,33 @@ export function EvalWorkspace() {
     () => new Map(documents.map((document) => [document.id, document.filename])),
     [documents]
   );
+
+  const questionsById = useMemo(
+    () => new Map(questions.map((questionItem) => [questionItem.id, questionItem])),
+    [questions]
+  );
+
+  const resultFilterOptions = useMemo(
+    () => buildEvalResultFilterOptions(run?.results ?? []),
+    [run?.results]
+  );
+
+  const filteredResults = useMemo(
+    () => filterEvalResults(run?.results ?? [], resultFilter),
+    [run?.results, resultFilter]
+  );
+
+  const avgGenerationLatency = useMemo(() => {
+    const latencies = (run?.results ?? [])
+      .map((result) => result.generation_latency_ms)
+      .filter((value): value is number => typeof value === "number");
+
+    if (latencies.length === 0) {
+      return null;
+    }
+
+    return latencies.reduce((total, value) => total + value, 0) / latencies.length;
+  }, [run?.results]);
 
   useEffect(() => {
     async function loadProjects() {
@@ -100,6 +133,7 @@ export function EvalWorkspace() {
 
     setRun(null);
     setSelectedRetrievalLog(null);
+    setResultFilter("all");
     setDatasets([]);
     setSelectedDatasetId("");
     if (selectedProjectId) {
@@ -136,6 +170,7 @@ export function EvalWorkspace() {
 
     setRun(null);
     setSelectedRetrievalLog(null);
+    setResultFilter("all");
     setRuns([]);
     setQuestions([]);
     if (selectedProjectId && selectedDatasetId) {
@@ -239,6 +274,7 @@ export function EvalWorkspace() {
       });
       setRun(result);
       setSelectedRetrievalLog(null);
+      setResultFilter("all");
       await refreshRuns(selectedProjectId, selectedDatasetId);
       setModal(null);
     } catch (runError) {
@@ -259,6 +295,7 @@ export function EvalWorkspace() {
       const result = await evalApi.getRun(selectedProjectId, selectedDatasetId, runId);
       setRun(result);
       setSelectedRetrievalLog(null);
+      setResultFilter("all");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load eval run");
     } finally {
@@ -278,6 +315,7 @@ export function EvalWorkspace() {
       await refreshDatasets(selectedProjectId);
       setRun(null);
       setSelectedRetrievalLog(null);
+      setResultFilter("all");
       setRuns([]);
       setQuestions([]);
     } catch (deleteError) {
@@ -562,48 +600,87 @@ export function EvalWorkspace() {
                   <span>Avg retrieval</span>
                   <strong>{formatLatency(run.metrics.avg_retrieval_latency_ms)}</strong>
                 </div>
+                <div>
+                  <span>Avg generation</span>
+                  <strong>{formatLatency(avgGenerationLatency)}</strong>
+                </div>
+              </div>
+              <div className="eval-result-filters">
+                {resultFilterOptions.map((option) => (
+                  <button
+                    className={option.id === resultFilter ? "active" : ""}
+                    key={option.id}
+                    onClick={() => setResultFilter(option.id)}
+                    type="button"
+                  >
+                    <span>{option.label}</span>
+                    <strong>{option.count}</strong>
+                  </button>
+                ))}
               </div>
               <ol>
-                {run.results.map((result) => (
-                  <li key={result.id}>
-                    <div className="result-heading">
-                      <strong>{result.question}</strong>
-                      <span>score {result.score ?? 0}</span>
-                    </div>
-                    <p>{result.answer}</p>
-                    <div className="score-row">
-                      hit {String(result.hit)} · citation {String(result.citation_covered)} ·
-                      answer {String(result.answer_matched)} · refused {String(result.refused)}
-                      {result.result_metadata.retrieval_log_id
-                        ? ` · log ${shortId(result.result_metadata.retrieval_log_id)}`
-                        : ""}
-                    </div>
-                    {result.result_metadata.retrieval_log_id ? (
-                      <button
-                        className="mini-button"
-                        disabled={isLoadingRetrievalLog}
-                        onClick={() => loadRetrievalLog(result.result_metadata.retrieval_log_id)}
-                        type="button"
-                      >
-                        {isLoadingRetrievalLog ? "Loading log" : "View retrieval log"}
-                      </button>
-                    ) : null}
-                    {result.result_metadata.judge_enabled ? (
-                      <div className="score-row">
-                        judge {String(result.result_metadata.judge_passed ?? false)}
-                        {typeof result.result_metadata.judge_score === "number"
-                          ? ` · ${result.result_metadata.judge_score.toFixed(2)}`
-                          : ""}
-                        {result.result_metadata.judge_reason
-                          ? ` · ${result.result_metadata.judge_reason}`
-                          : ""}
-                        {result.result_metadata.judge_error
-                          ? ` · ${result.result_metadata.judge_error}`
-                          : ""}
-                      </div>
-                    ) : null}
+                {filteredResults.length === 0 ? (
+                  <li>
+                    <p>No results match this filter.</p>
                   </li>
-                ))}
+                ) : (
+                  filteredResults.map((result) => {
+                    const expectedQuestion = questionsById.get(result.question_id);
+                    const expectedDocumentName = expectedQuestion?.expected_document_id
+                      ? documentNamesById.get(expectedQuestion.expected_document_id) ??
+                        expectedQuestion.expected_document_id
+                      : null;
+                    const retrievedCount = result.result_metadata.retrieved_chunk_ids?.length ?? 0;
+                    const citationCount = result.result_metadata.citation_chunk_ids?.length ?? 0;
+
+                    return (
+                      <li key={result.id}>
+                        <div className="result-heading">
+                          <strong>{result.question}</strong>
+                          <span>score {result.score ?? 0}</span>
+                        </div>
+                        <p>{result.answer ?? "No answer returned."}</p>
+                        <div className="score-row">
+                          hit {String(result.hit)} · citation {String(result.citation_covered)} ·
+                          answer {String(result.answer_matched)} · refused {String(result.refused)}
+                          {expectedDocumentName ? ` · expected ${expectedDocumentName}` : ""}
+                        </div>
+                        <div className="score-row">
+                          retrieval {formatLatency(result.retrieval_latency_ms)} · generation{" "}
+                          {formatLatency(result.generation_latency_ms)} · retrieved {retrievedCount} ·
+                          cited {citationCount}
+                          {result.result_metadata.retrieval_log_id
+                            ? ` · log ${shortId(result.result_metadata.retrieval_log_id)}`
+                            : ""}
+                        </div>
+                        {result.result_metadata.retrieval_log_id ? (
+                          <button
+                            className="mini-button"
+                            disabled={isLoadingRetrievalLog}
+                            onClick={() => loadRetrievalLog(result.result_metadata.retrieval_log_id)}
+                            type="button"
+                          >
+                            {isLoadingRetrievalLog ? "Loading log" : "View retrieval log"}
+                          </button>
+                        ) : null}
+                        {result.result_metadata.judge_enabled ? (
+                          <div className="score-row">
+                            judge {String(result.result_metadata.judge_passed ?? false)}
+                            {typeof result.result_metadata.judge_score === "number"
+                              ? ` · ${result.result_metadata.judge_score.toFixed(2)}`
+                              : ""}
+                            {result.result_metadata.judge_reason
+                              ? ` · ${result.result_metadata.judge_reason}`
+                              : ""}
+                            {result.result_metadata.judge_error
+                              ? ` · ${result.result_metadata.judge_error}`
+                              : ""}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })
+                )}
               </ol>
               {selectedRetrievalLog ? (
                 <div className="retrieval-log-detail">

@@ -1081,7 +1081,7 @@ h1 {
 
 .eval-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   border-bottom: 1px solid var(--border);
 }
 
@@ -1104,6 +1104,40 @@ h1 {
 
 .eval-metrics strong {
   font-size: 20px;
+}
+
+.eval-result-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.eval-result-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.54);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.eval-result-filters button.active,
+.eval-result-filters button:hover {
+  border-color: rgba(43, 110, 246, 0.28);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.eval-result-filters strong {
+  font-size: 12px;
 }
 
 .eval-run-history {
