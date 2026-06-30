@@ -220,6 +220,7 @@ a {
 
 .icon-button.active,
 .icon-button:hover,
+.mini-button.active,
 .mini-button:hover,
 .secondary-button:hover,
 .text-button:hover {
@@ -1153,25 +1154,154 @@ h1 {
   display: grid;
 }
 
-.eval-run-list button {
+.eval-run-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+
+.eval-run-row:last-child {
+  border-bottom: 0;
+}
+
+.eval-run-row.active,
+.eval-run-row:hover {
+  background: var(--accent-soft);
+}
+
+.eval-run-open {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px 12px;
   padding: 12px 14px;
   border: 0;
-  border-bottom: 1px solid var(--border);
   color: var(--foreground);
   background: transparent;
   text-align: left;
+  cursor: pointer;
 }
 
-.eval-run-list button:last-child {
+.eval-run-row > .mini-button {
+  align-self: center;
+  margin-right: 10px;
+  white-space: nowrap;
+}
+
+.eval-compare-panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: var(--shadow);
+}
+
+.eval-compare-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.eval-compare-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.eval-compare-scroll {
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.eval-compare-scroll:last-child {
   border-bottom: 0;
 }
 
-.eval-run-list button.active,
-.eval-run-list button:hover {
-  background: var(--accent-soft);
+.eval-compare-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+}
+
+.eval-compare-table th,
+.eval-compare-table td {
+  min-width: 128px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.eval-compare-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.eval-compare-table th:last-child,
+.eval-compare-table td:last-child {
+  border-right: 0;
+}
+
+.eval-compare-table th {
+  color: var(--foreground);
+  background: rgba(248, 250, 252, 0.76);
+  font-size: 12px;
+}
+
+.eval-compare-table th:first-child,
+.eval-compare-table td:first-child {
+  min-width: 180px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.eval-compare-table th span,
+.eval-compare-table th small,
+.eval-compare-table td small {
+  display: block;
+}
+
+.eval-compare-table th small,
+.eval-compare-table td small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.question-matrix td:first-child {
+  max-width: 280px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.eval-compare-cell {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.eval-compare-cell.pass {
+  color: #166534;
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.eval-compare-cell.fail,
+.eval-compare-cell.refused {
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.eval-compare-cell.missing {
+  color: var(--muted);
+  background: rgba(15, 23, 42, 0.06);
 }
 
 .eval-run-list span {

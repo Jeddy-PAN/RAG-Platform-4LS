@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { documentsApi, evalApi, projectsApi, retrievalApi } from "@/lib/api";
 import {
+  buildEvalRunCompare,
+  type EvalRunCompareCell
+} from "@/lib/eval-run-compare";
+import {
   buildEvalResultFilterOptions,
   filterEvalResults,
   type EvalResultFilter
@@ -35,6 +39,35 @@ function formatLatency(value: number | null | undefined) {
   return `${Math.round(value)} ms`;
 }
 
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatCellOutcome(cell: EvalRunCompareCell) {
+  if (!cell.resultId) {
+    return "Missing";
+  }
+  if (cell.refused) {
+    return "Refused";
+  }
+  return cell.answerMatched ? "Pass" : "Fail";
+}
+
+function getCellClassName(cell: EvalRunCompareCell) {
+  if (!cell.resultId) {
+    return "eval-compare-cell missing";
+  }
+  if (cell.refused) {
+    return "eval-compare-cell refused";
+  }
+  return cell.answerMatched ? "eval-compare-cell pass" : "eval-compare-cell fail";
+}
+
 export function EvalWorkspace() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<UUID | "">("");
@@ -54,6 +87,9 @@ export function EvalWorkspace() {
   const [judgeEnabled, setJudgeEnabled] = useState(false);
   const [runs, setRuns] = useState<EvalRunSummary[]>([]);
   const [run, setRun] = useState<EvalRun | null>(null);
+  const [compareRunIds, setCompareRunIds] = useState<UUID[]>([]);
+  const [compareRunsById, setCompareRunsById] = useState<Record<UUID, EvalRun>>({});
+  const [loadingCompareRunIds, setLoadingCompareRunIds] = useState<Set<UUID>>(new Set());
   const [resultFilter, setResultFilter] = useState<EvalResultFilter>("all");
   const [selectedRetrievalLog, setSelectedRetrievalLog] = useState<RetrievalLog | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -106,6 +142,46 @@ export function EvalWorkspace() {
     return latencies.reduce((total, value) => total + value, 0) / latencies.length;
   }, [run?.results]);
 
+  const compareRuns = useMemo(
+    () =>
+      compareRunIds
+        .map((runId) => (run?.id === runId ? run : compareRunsById[runId]))
+        .filter((item): item is EvalRun => Boolean(item)),
+    [compareRunIds, compareRunsById, run]
+  );
+
+  const compare = useMemo(() => buildEvalRunCompare(compareRuns), [compareRuns]);
+
+  const compareMetricRows = useMemo(
+    () => [
+      {
+        label: "Hit rate",
+        values: compare.runs.map((item) => formatRate(item.hitRate))
+      },
+      {
+        label: "Citation",
+        values: compare.runs.map((item) => formatRate(item.citationCoverageRate))
+      },
+      {
+        label: "Answer match",
+        values: compare.runs.map((item) => formatRate(item.answerMatchRate))
+      },
+      {
+        label: "Judge",
+        values: compare.runs.map((item) => formatRate(item.judgeMatchRate))
+      },
+      {
+        label: "Avg retrieval",
+        values: compare.runs.map((item) => formatLatency(item.avgRetrievalLatencyMs))
+      },
+      {
+        label: "Avg generation",
+        values: compare.runs.map((item) => formatLatency(item.avgGenerationLatencyMs))
+      }
+    ],
+    [compare.runs]
+  );
+
   useEffect(() => {
     async function loadProjects() {
       try {
@@ -134,6 +210,7 @@ export function EvalWorkspace() {
     setRun(null);
     setSelectedRetrievalLog(null);
     setResultFilter("all");
+    resetCompareState();
     setDatasets([]);
     setSelectedDatasetId("");
     if (selectedProjectId) {
@@ -171,6 +248,7 @@ export function EvalWorkspace() {
     setRun(null);
     setSelectedRetrievalLog(null);
     setResultFilter("all");
+    resetCompareState();
     setRuns([]);
     setQuestions([]);
     if (selectedProjectId && selectedDatasetId) {
@@ -208,6 +286,48 @@ export function EvalWorkspace() {
   async function refreshQuestions(projectId: UUID, datasetId: UUID) {
     const questionList = await evalApi.listQuestions(projectId, datasetId);
     setQuestions(questionList);
+  }
+
+  function resetCompareState() {
+    setCompareRunIds([]);
+    setCompareRunsById({});
+    setLoadingCompareRunIds(new Set());
+  }
+
+  async function ensureCompareRunDetail(runId: UUID) {
+    if (!selectedProjectId || !selectedDatasetId || run?.id === runId || compareRunsById[runId]) {
+      return;
+    }
+
+    setLoadingCompareRunIds((current) => new Set(current).add(runId));
+    setError(null);
+    try {
+      const result = await evalApi.getRun(selectedProjectId, selectedDatasetId, runId);
+      setCompareRunsById((current) => ({ ...current, [runId]: result }));
+    } catch (loadError) {
+      setCompareRunIds((current) => current.filter((id) => id !== runId));
+      setError(loadError instanceof Error ? loadError.message : "Unable to load compare run");
+    } finally {
+      setLoadingCompareRunIds((current) => {
+        const next = new Set(current);
+        next.delete(runId);
+        return next;
+      });
+    }
+  }
+
+  function toggleCompareRun(runId: UUID) {
+    if (compareRunIds.includes(runId)) {
+      setCompareRunIds((current) => current.filter((id) => id !== runId));
+      return;
+    }
+
+    if (compareRunIds.length >= 4) {
+      return;
+    }
+
+    setCompareRunIds((current) => [...current, runId]);
+    void ensureCompareRunDetail(runId);
   }
 
   async function createDataset() {
@@ -273,6 +393,7 @@ export function EvalWorkspace() {
         judge_enabled: judgeEnabled
       });
       setRun(result);
+      setCompareRunsById((current) => ({ ...current, [result.id]: result }));
       setSelectedRetrievalLog(null);
       setResultFilter("all");
       await refreshRuns(selectedProjectId, selectedDatasetId);
@@ -294,6 +415,7 @@ export function EvalWorkspace() {
     try {
       const result = await evalApi.getRun(selectedProjectId, selectedDatasetId, runId);
       setRun(result);
+      setCompareRunsById((current) => ({ ...current, [result.id]: result }));
       setSelectedRetrievalLog(null);
       setResultFilter("all");
     } catch (loadError) {
@@ -316,6 +438,7 @@ export function EvalWorkspace() {
       setRun(null);
       setSelectedRetrievalLog(null);
       setResultFilter("all");
+      resetCompareState();
       setRuns([]);
       setQuestions([]);
     } catch (deleteError) {
@@ -489,23 +612,42 @@ export function EvalWorkspace() {
           </div>
           {runs.length > 0 ? (
             <div className="eval-run-list compact">
-              {runs.map((item) => (
-                <button
-                  className={run?.id === item.id ? "active" : ""}
-                  disabled={isLoadingRun}
-                  key={item.id}
-                  onClick={() => loadRunDetail(item.id)}
-                  type="button"
-                >
-                  <span>
-                    {item.retrieval_mode} · top {item.top_k}
-                  </span>
-                  <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
-                  <small>
-                    {item.status} · {item.result_count} results
-                  </small>
-                </button>
-              ))}
+              {runs.map((item) => {
+                const isCompareSelected = compareRunIds.includes(item.id);
+                const isCompareDisabled = !isCompareSelected && compareRunIds.length >= 4;
+                const isCompareLoading = loadingCompareRunIds.has(item.id);
+
+                return (
+                  <div
+                    className={run?.id === item.id ? "eval-run-row active" : "eval-run-row"}
+                    key={item.id}
+                  >
+                    <button
+                      className="eval-run-open"
+                      disabled={isLoadingRun}
+                      onClick={() => loadRunDetail(item.id)}
+                      type="button"
+                    >
+                      <span>
+                        {item.retrieval_mode} · top {item.top_k}
+                      </span>
+                      <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
+                      <small>
+                        {item.status} · {item.result_count} results
+                      </small>
+                    </button>
+                    <button
+                      aria-label={`${isCompareSelected ? "Remove from" : "Add to"} compare`}
+                      className={isCompareSelected ? "mini-button active" : "mini-button"}
+                      disabled={isCompareDisabled || isCompareLoading}
+                      onClick={() => toggleCompareRun(item.id)}
+                      type="button"
+                    >
+                      {isCompareLoading ? "..." : isCompareSelected ? "Added" : "+"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="sidebar-empty">No runs for this dataset.</p>
@@ -573,6 +715,86 @@ export function EvalWorkspace() {
               </button>
             </div>
           </section>
+          {compareRunIds.length > 0 ? (
+            <section className="eval-compare-panel">
+              <div className="eval-compare-heading">
+                <div>
+                  <span className="sidebar-label">Run compare</span>
+                  <strong>
+                    {compare.runs.length}/{compareRunIds.length} loaded
+                  </strong>
+                </div>
+                <button className="mini-button" onClick={resetCompareState} type="button">
+                  Clear
+                </button>
+              </div>
+              {compare.runs.length < 2 ? (
+                <p className="sidebar-empty">Select at least 2 runs to compare metrics and questions.</p>
+              ) : (
+                <>
+                  <div className="eval-compare-scroll">
+                    <table className="eval-compare-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          {compare.runs.map((item) => (
+                            <th key={item.id}>
+                              <span>{item.label}</span>
+                              <small>
+                                {formatDateTime(item.createdAt)} · {item.resultCount} results
+                              </small>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compareMetricRows.map((row) => (
+                          <tr key={row.label}>
+                            <td>{row.label}</td>
+                            {row.values.map((value, index) => (
+                              <td key={`${row.label}-${compare.runs[index]?.id ?? index}`}>
+                                {value}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="eval-compare-scroll">
+                    <table className="eval-compare-table question-matrix">
+                      <thead>
+                        <tr>
+                          <th>Question</th>
+                          {compare.runs.map((item) => (
+                            <th key={item.id}>{item.label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compare.questions.map((questionItem) => (
+                          <tr key={questionItem.questionId}>
+                            <td>{questionItem.question}</td>
+                            {questionItem.cells.map((cell) => (
+                              <td key={`${questionItem.questionId}-${cell.runId}`}>
+                                <span className={getCellClassName(cell)}>
+                                  {formatCellOutcome(cell)}
+                                </span>
+                                <small>
+                                  score {cell.score ?? "n/a"} · hit {String(cell.hit ?? false)} ·
+                                  citation {String(cell.citationCovered ?? false)}
+                                </small>
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
           {!run ? (
             <section className="retrieval-empty">
               Select a previous run or create a dataset, add questions, then run eval.
