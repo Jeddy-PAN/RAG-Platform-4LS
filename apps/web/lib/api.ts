@@ -85,7 +85,8 @@ export const projectsApi = {
 };
 
 export const documentsApi = {
-  list: (projectId: UUID) => request<DocumentItem[]>(`/api/projects/${projectId}/documents`),
+  list: (projectId: UUID, limit = 200) =>
+    request<DocumentItem[]>(`/api/projects/${projectId}/documents?limit=${limit}`),
   upload: (projectId: UUID, file: File) => {
     const formData = new FormData();
     formData.append("file", file);
