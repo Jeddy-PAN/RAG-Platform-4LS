@@ -9,7 +9,7 @@ The project is designed as a small production-style local tool: each project is 
 - FastAPI backend with project, document, ingestion, retrieval, chat, citation, feedback, eval, and metrics APIs
 - PostgreSQL with pgvector and PostgreSQL full-text search
 - Redis + RQ worker for asynchronous document ingestion
-- PDF, DOCX, TXT, and XLSX parsing
+- PDF, DOCX, TXT, MD, and XLSX parsing
 - Local-first embedding through Ollama `bge-m3`, with OpenAI-compatible cloud embedding fallback
 - OpenAI-compatible cloud chat provider for DeepSeek or similar API-key based providers
 - Hybrid retrieval with vector, keyword, and fused scoring
@@ -103,7 +103,7 @@ http://localhost:3000/metrics
 1. Open the frontend.
 2. Create a project with the `+` button.
 3. Select the active project.
-4. Upload a PDF, DOCX, TXT, or XLSX file into the selected project.
+4. Upload a PDF, DOCX, TXT, MD, or XLSX file into the selected project.
 5. Wait for the file status to move from `uploaded` or `processing` to `indexed`.
 6. Ask a question in the chat area.
 7. Review citations under the assistant answer.

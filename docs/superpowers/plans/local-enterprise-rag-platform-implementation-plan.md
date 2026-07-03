@@ -146,7 +146,7 @@ Full source code belongs in the implementation phase, not in planning documents.
 **Required checks:**
 
 - User can create, list, update, and delete projects.
-- User can upload PDF, DOCX, TXT, and XLSX files into a selected project.
+- User can upload PDF, DOCX, TXT, MD, and XLSX files into a selected project.
 - Upload creates a document row and an ingestion job row.
 - Unsupported file types are rejected with a clear 400 response.
 
@@ -360,7 +360,7 @@ Expected: parser, chunker, embedding provider, and ingestion tests are specified
 
 - [ ] **Step 8: Execute the ingestion plan.**
 
-Expected: PDF, DOCX, TXT, and XLSX files produce indexed chunks.
+Expected: PDF, DOCX, TXT, MD, and XLSX files produce indexed chunks.
 
 - [ ] **Step 9: Write and review `retrieval-engine-plan.md`.**
 

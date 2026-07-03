@@ -12,6 +12,7 @@ def create_project(api_client, name: str = "Docs") -> str:
     [
         ("source.pdf", "application/pdf"),
         ("source.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        ("source.md", "text/markdown"),
         ("source.txt", "text/plain"),
         ("source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
     ],

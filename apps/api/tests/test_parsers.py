@@ -19,6 +19,23 @@ def test_txt_parser_normalizes_utf8_text(tmp_path: Path) -> None:
     assert sections[0].source_metadata == {"line_start": 1, "line_end": 2}
 
 
+def test_markdown_parser_preserves_markdown_text(tmp_path: Path) -> None:
+    """Markdown parser should ingest readable Markdown as text."""
+
+    path = tmp_path / "runbook.md"
+    path.write_text("# Runbook\n\n- Check latency\n- Review citations\n", encoding="utf-8")
+
+    sections = get_parser_for_path(path).parse(path)
+
+    assert len(sections) == 1
+    assert sections[0].text == "# Runbook\n- Check latency\n- Review citations"
+    assert sections[0].source_metadata == {
+        "format": "markdown",
+        "line_start": 1,
+        "line_end": 4,
+    }
+
+
 def test_docx_parser_returns_non_empty_paragraphs(tmp_path: Path) -> None:
     """DOCX parser should extract readable paragraph text."""
 

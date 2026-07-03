@@ -9,7 +9,7 @@ type SidebarUploadZoneProps = {
   onUpload: (files: File[]) => void;
 };
 
-const ACCEPTED_TYPES = ".pdf,.docx,.txt,.xlsx";
+const ACCEPTED_TYPES = ".pdf,.docx,.txt,.md,.xlsx";
 
 export function SidebarUploadZone({ disabled, isUploading, onUpload }: SidebarUploadZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,7 +57,7 @@ export function SidebarUploadZone({ disabled, isUploading, onUpload }: SidebarUp
       />
       <div>
         <strong>{disabled ? "Select a project first" : "Drop project files here"}</strong>
-        <p>PDF, DOCX, TXT, XLSX</p>
+        <p>PDF, DOCX, TXT, MD, XLSX</p>
       </div>
       <button
         className="secondary-button"

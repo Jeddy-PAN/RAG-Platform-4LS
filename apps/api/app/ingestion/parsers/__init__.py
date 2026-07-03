@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.ingestion.parsers.base import DocumentParser, ParserError, NormalizedSection
 from app.ingestion.parsers.docx import DocxParser
+from app.ingestion.parsers.markdown import MarkdownParser
 from app.ingestion.parsers.pdf import PdfParser
 from app.ingestion.parsers.txt import TxtParser
 from app.ingestion.parsers.xlsx import XlsxParser
@@ -10,6 +11,7 @@ from app.ingestion.parsers.xlsx import XlsxParser
 PARSERS_BY_EXTENSION: dict[str, type[DocumentParser]] = {
     ".pdf": PdfParser,
     ".docx": DocxParser,
+    ".md": MarkdownParser,
     ".txt": TxtParser,
     ".xlsx": XlsxParser,
 }

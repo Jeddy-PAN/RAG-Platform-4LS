@@ -5,7 +5,7 @@ import uuid
 from app.core.config import get_settings
 
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".xlsx"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".md", ".txt", ".xlsx"}
 
 
 def get_upload_root() -> Path:

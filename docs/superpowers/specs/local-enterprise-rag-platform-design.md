@@ -86,6 +86,7 @@ V1 supports:
 - PDF
 - DOCX
 - TXT
+- MD
 - XLSX
 
 The upload API stores the original file, creates a document record, and enqueues an ingestion job. The frontend shows ingestion status.
@@ -99,6 +100,7 @@ Initial parser choices:
 - PDF: PyMuPDF
 - DOCX: python-docx
 - TXT: native Python reader
+- MD: UTF-8 Markdown text reader
 - XLSX: openpyxl
 
 The parser output should preserve basic metadata:
@@ -432,7 +434,7 @@ Optional later:
 4. Project CRUD
 5. Document upload and storage
 6. RQ ingestion job lifecycle
-7. Parsers for PDF, DOCX, TXT, XLSX
+7. Parsers for PDF, DOCX, TXT, MD, XLSX
 8. Chunking
 9. Embedding provider adapter
 10. pgvector and full-text indexing
@@ -466,7 +468,7 @@ Optional later:
 ## Acceptance Criteria For V1
 
 - User can create multiple projects.
-- User can upload PDF, DOCX, TXT, and XLSX into a selected project.
+- User can upload PDF, DOCX, TXT, MD, and XLSX into a selected project.
 - Ingestion runs asynchronously and shows status.
 - Documents are parsed, chunked, embedded, and indexed.
 - User can ask questions against one project without retrieving other projects' content.

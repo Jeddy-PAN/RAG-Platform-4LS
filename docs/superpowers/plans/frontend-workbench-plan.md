@@ -98,7 +98,7 @@ Lower section:
 - drag-and-drop upload zone
 - click-to-select upload
 - disabled state when no active project is selected
-- accepted file types: PDF, DOCX, TXT, XLSX
+- accepted file types: PDF, DOCX, TXT, MD, XLSX
 
 Project interactions:
 

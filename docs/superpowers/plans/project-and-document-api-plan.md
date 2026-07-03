@@ -26,7 +26,7 @@ This plan covers:
 
 This plan does not cover:
 
-- parsing PDF/DOCX/TXT/XLSX
+- parsing PDF/DOCX/TXT/MD/XLSX
 - chunking
 - embeddings
 - indexing
@@ -386,7 +386,7 @@ Verify:
 
 Verify:
 
-- upload `.pdf`, `.docx`, `.txt`, `.xlsx`
+- upload `.pdf`, `.docx`, `.txt`, `.md`, `.xlsx`
 - unsupported file type returns 400
 - empty upload returns 400
 - upload creates document row
@@ -447,7 +447,7 @@ curl -X POST http://localhost:8000/api/projects/{project_id}/documents \
 ## Acceptance Criteria
 
 - Project CRUD APIs work.
-- Document upload accepts PDF, DOCX, TXT, and XLSX.
+- Document upload accepts PDF, DOCX, TXT, MD, and XLSX.
 - Unsupported files are rejected.
 - Uploaded files are stored under a project/document scoped path.
 - Upload creates a document row.

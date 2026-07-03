@@ -423,7 +423,7 @@ chunks exist for the selected project_id
 ## Acceptance Criteria
 
 - Worker can process queued ingestion jobs.
-- PDF, DOCX, TXT, and XLSX files produce normalized sections.
+- PDF, DOCX, TXT, MD, and XLSX files produce normalized sections.
 - Sections are chunked deterministically.
 - Chunks include stable content hashes.
 - Embedding provider is isolated behind an interface.
