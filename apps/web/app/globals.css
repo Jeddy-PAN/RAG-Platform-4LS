@@ -670,6 +670,35 @@ h1 {
   gap: 8px;
 }
 
+.citation-panel {
+  display: grid;
+  gap: 7px;
+}
+
+.citation-toggle {
+  width: fit-content;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.citation-toggle strong {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--foreground);
+  background: rgba(16, 24, 40, 0.08);
+  font-size: 11px;
+}
+
 .citation-list {
   display: grid;
   gap: 7px;

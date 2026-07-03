@@ -98,7 +98,7 @@ export type ChatMetricsResponse = {
   items: ChatMetric[];
 };
 
-export type FeedbackRating = "positive" | "negative";
+export type FeedbackRating = "useful" | "not_useful";
 
 export type FeedbackResponse = {
   id: UUID;

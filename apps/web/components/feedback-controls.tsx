@@ -25,17 +25,17 @@ export function FeedbackControls({ disabled, onSubmit }: FeedbackControlsProps) 
   return (
     <div className="feedback-controls" aria-label="Answer feedback">
       <button
-        aria-pressed={rating === "positive"}
+        aria-pressed={rating === "useful"}
         disabled={disabled || isSaving}
-        onClick={() => submit("positive")}
+        onClick={() => submit("useful")}
         type="button"
       >
         Helpful
       </button>
       <button
-        aria-pressed={rating === "negative"}
+        aria-pressed={rating === "not_useful"}
         disabled={disabled || isSaving}
-        onClick={() => submit("negative")}
+        onClick={() => submit("not_useful")}
         type="button"
       >
         Not helpful

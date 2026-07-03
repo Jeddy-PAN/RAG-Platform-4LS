@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { ChatMessage, FeedbackRating, UUID } from "@/lib/types";
 import { CitationList } from "./citation-list";
 import { FeedbackControls } from "./feedback-controls";
@@ -12,6 +13,12 @@ type MessageListProps = {
 };
 
 export function MessageList({ messages, conversationId, isSending, onFeedback }: MessageListProps) {
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [messages.length, isSending]);
+
   return (
     <div className="message-list">
       {messages.map((message) => (
@@ -37,6 +44,7 @@ export function MessageList({ messages, conversationId, isSending, onFeedback }:
           <div className="message-bubble loading-answer">Searching local knowledge</div>
         </article>
       ) : null}
+      <div aria-hidden="true" ref={endRef} />
     </div>
   );
 }
