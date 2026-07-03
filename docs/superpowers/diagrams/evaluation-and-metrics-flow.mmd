@@ -1,41 +1,53 @@
 flowchart TD
     A[Eval Dataset] --> B[Eval Questions]
-    B --> C[Start Eval Run]
+    B --> C[Start Dataset Run]
     C --> D[For each question]
 
-    D --> E[Run project-scoped retrieval]
-    E --> F[Compute retrieval hit]
-    F --> G{run_generation?}
+    D --> E[Project-scoped retrieval]
+    E --> F{Reranker enabled?}
+    F -->|yes| G[Apply local reranker]
+    F -->|no| H[Use retrieval ranking]
+    G --> I[Compute retrieval hit]
+    H --> I
 
-    G -->|yes| H[Run chat answer generation]
-    H --> I[Compute citation coverage]
-    H --> J[Compute refusal behavior]
+    I --> J[Generate cited answer]
+    J --> K[Compute citation coverage]
+    J --> L[Detect refusal behavior]
+    J --> M[Match expected answer notes]
+    M --> N{LLM judge enabled?}
+    N -->|yes| O[Judge answer quality]
+    N -->|no| P[Skip judge]
 
-    G -->|no| K[Skip generation metrics]
+    K --> Q[Store eval result]
+    L --> Q
+    M --> Q
+    O --> Q
+    P --> Q
 
-    I --> L[Store eval_result]
-    J --> L
-    K --> L
-    F --> L
+    Q --> R{More questions?}
+    R -->|yes| D
+    R -->|no| S[Aggregate run metrics]
+    S --> T[Store eval run]
+    T --> U[Run history]
+    U --> V[Run compare]
+    U --> W[CSV or JSON export]
 
-    L --> M{More questions?}
-    M -->|yes| D
-    M -->|no| N[Aggregate run metrics]
-    N --> O[Store eval_run metrics]
-
-    O --> P[Project metrics summary]
-    Q[Retrieval logs] --> P
-    R[Feedback] --> P
-    S[Documents and chunks] --> P
+    X[Chat request] --> Y[Retrieval log]
+    X --> Z[Chat request metric]
+    Y --> AA[Metrics page links]
+    Z --> AB[Metrics summary]
+    Z --> AC[Recent request list]
 
     subgraph Isolation[Project Isolation]
-        X[dataset.project_id]
-        Y[question.project_id]
-        Z[run.project_id]
-        W[result.project_id]
+        P1[dataset.project_id]
+        P2[question.project_id]
+        P3[run.project_id]
+        P4[result.project_id]
+        P5[metric.project_id]
     end
 
-    C -. validate .-> X
-    D -. validate .-> Y
-    O -. store .-> Z
-    L -. store .-> W
+    C -. validate .-> P1
+    D -. validate .-> P2
+    T -. store .-> P3
+    Q -. store .-> P4
+    Z -. store .-> P5

@@ -138,10 +138,10 @@ docs/provider-configuration.md
 Should cover:
 
 - OpenAI-compatible chat provider
-- OpenAI-compatible embedding provider
+- local Ollama embedding provider
+- OpenAI-compatible embedding provider fallback
 - DeepSeek-style provider example
 - OpenRouter/SiliconFlow-style provider example
-- local Ollama as optional future path
 - embedding dimension warning
 
 Required variables:
@@ -214,7 +214,7 @@ Should explain:
 - citation coverage
 - refusal accuracy
 - latency metrics
-- feedback useful rate
+- feedback records and future useful-rate metric
 - chunk size experiments
 - vector vs keyword vs hybrid comparison
 

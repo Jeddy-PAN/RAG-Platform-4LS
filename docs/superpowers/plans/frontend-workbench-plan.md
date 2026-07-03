@@ -1,18 +1,18 @@
 # Frontend Workbench Plan
 
-> This is a lightweight module plan. It documents layout structure, interaction flows, component boundaries, API usage, UI states, and verification goals. Full source code should be generated during implementation, not embedded here.
+> This is a lightweight module plan. It documents frontend layout, page responsibilities, interaction flows, API usage, UI states, and verification goals. Full source code should be generated during implementation, not embedded here.
 
-**Goal:** Build a simple, lightweight single-screen RAG workbench with project/file management on the left and chat as the main experience on the right.
+**Goal:** Provide a simple local RAG workbench where project files, chat, retrieval inspection, eval runs, and metrics are available without turning the product into a heavy dashboard suite.
 
-**Architecture:** The frontend starts as one primary app surface instead of a multi-page dashboard. A top bar anchors the app. A left sidebar manages projects, project files, and drag-and-drop upload. The right workspace centers the chat experience. Retrieval Playground remains available through a lightweight floating button and can open as a separate route, drawer, or overlay depending on implementation fit.
+**Current status:** The main workbench, Retrieval Playground, Eval page, and Metrics page are implemented as separate Next.js routes with shared project context patterns and a lightweight visual style.
 
-**Tech Stack:** Next.js, React, TypeScript, Tailwind CSS, shadcn-style component patterns, browser fetch API or a small typed API client.
+**Tech Stack:** Next.js, React, TypeScript, global CSS, browser fetch API, small typed API client.
 
 ---
 
 ## Design Read
 
-This should feel like a lightweight local knowledge assistant, not a dashboard suite.
+The frontend should feel like a lightweight local knowledge assistant.
 
 UI character:
 
@@ -23,92 +23,39 @@ minimal, calm, translucent, chat-first, project-aware
 Key direction:
 
 - top bar remains visible
-- left sidebar is split vertically
-- upper sidebar is mainly project/file navigation
-- lower sidebar is drag-and-drop upload
-- right side is the main chat area
-- Retrieval Playground is secondary and accessed through a floating button
+- main page avoids full-page vertical growth on desktop
+- left sidebar uses local scrolling
+- project/file navigation stays lightweight
+- upload zone remains in the lower sidebar
+- chat is the primary experience
+- Retrieval, Eval, and Metrics are secondary tools reachable through floating links
 
 Avoid:
 
 - heavy dashboard feel
-- many page tabs
-- dense analytics UI in v1
 - oversized cards
+- nested cards
 - marketing hero sections
-- complicated admin navigation
+- always-visible destructive actions
+- fixed warning banners for transient errors
 
-## Scope
+## Implemented Routes
 
-This plan covers v1 frontend surface:
+Main routes:
 
-- main single-screen workbench
-- top app bar
-- left project/file sidebar
-- project add/edit/delete interactions
-- collapsible project file lists
-- drag-and-drop upload area
-- right-side chat workspace
-- citation and feedback display
-- floating Retrieval Playground entry
-- minimal project/status indicators
+- `/` main chat workbench
+- `/retrieval` Retrieval Playground
+- `/eval` Eval workspace
+- `/metrics` Chat metrics dashboard
 
-This plan does not cover:
-
-- full Eval Dashboard UI
-- full metrics dashboard
-- full document viewer
-- full admin/settings UI
-- multi-user auth UI
-- complex layout customization
-
-## File Changes
-
-App routes:
-
-- `apps/web/app/layout.tsx`
-- `apps/web/app/page.tsx`
-- `apps/web/app/retrieval/page.tsx`
-
-Components:
-
-- `apps/web/components/top-bar.tsx`
-- `apps/web/components/workbench-shell.tsx`
-- `apps/web/components/project-sidebar.tsx`
-- `apps/web/components/project-list.tsx`
-- `apps/web/components/project-row.tsx`
-- `apps/web/components/project-file-tree.tsx`
-- `apps/web/components/sidebar-upload-zone.tsx`
-- `apps/web/components/chat-workspace.tsx`
-- `apps/web/components/chat-empty-state.tsx`
-- `apps/web/components/message-list.tsx`
-- `apps/web/components/message-composer.tsx`
-- `apps/web/components/citation-list.tsx`
-- `apps/web/components/feedback-controls.tsx`
-- `apps/web/components/retrieval-floating-button.tsx`
-- `apps/web/components/retrieval-controls.tsx`
-- `apps/web/components/retrieval-results.tsx`
-- `apps/web/components/status-badge.tsx`
-- `apps/web/components/error-state.tsx`
-- `apps/web/components/loading-state.tsx`
-
-API/client:
+Shared infrastructure:
 
 - `apps/web/lib/api.ts`
 - `apps/web/lib/types.ts`
 - `apps/web/lib/format.ts`
-
-Styles:
-
 - `apps/web/app/globals.css`
 
-## Mermaid Diagram
-
-Frontend layout and workflow diagram:
-
-- `docs/superpowers/diagrams/frontend-workbench-navigation.mmd`
-
-## Layout Structure
+## Main Workbench
 
 Primary screen:
 
@@ -118,201 +65,191 @@ Primary screen:
 ├───────────────────────┬──────────────────────────────────────┤
 │ Left Sidebar          │ Right Chat Workspace                 │
 │                       │                                      │
-│ Projects / Files 60%  │ Empty: title + centered input        │
-│                       │ After first message: conversation    │
-│ Upload Zone 40%       │ with composer fixed near bottom      │
+│ Projects / Files      │ Empty: title + centered composer     │
+│ local scroll          │                                      │
+│                       │ Active: conversation + composer      │
+│ Upload Zone           │ Floating Retrieval/Eval/Metrics      │
 └───────────────────────┴──────────────────────────────────────┘
 ```
 
-Recommended proportions:
+Desktop behavior:
 
-```text
-top bar height: compact and fixed
-left sidebar width: 280-340px desktop
-left sidebar upper area: about 60%
-left sidebar lower upload area: about 40%
-right side: remaining width
-```
+- top bar stays visible
+- workbench fits the viewport
+- project/file list scrolls inside the sidebar
+- chat conversation scrolls inside the right panel
+- page-level scroll should not be required just to reach the composer or floating tool links
 
-Mobile behavior can collapse the sidebar behind a menu button.
+### Left Sidebar
 
-## Top Bar
+The sidebar has two sections.
 
-Responsibilities:
+Upper section:
 
-- app name or compact brand label
-- optional active project indicator
-- minimal global controls
-
-Rules:
-
-- keep top bar visually light
-- do not add user/account controls in v1
-- do not duplicate project actions that belong in the sidebar
-
-## Left Sidebar
-
-The left sidebar has two sections.
-
-### Upper Section: Projects And Files
-
-Approximate height:
-
-```text
-60%
-```
-
-Contains:
-
-- Projects header
-- lightweight add button using plus icon
-- lightweight edit mode button using edit icon
+- projects list
+- lightweight `+` button for add project
+- lightweight edit icon to toggle edit mode
 - project rows
-- collapsible file lists under each project
+- file tree under the expanded project
+- local scrolling when many projects/files exist
 
-Interactions:
+Lower section:
 
-- click project row: focus/preview project
+- drag-and-drop upload zone
+- click-to-select upload
+- disabled state when no active project is selected
+- accepted file types: PDF, DOCX, TXT, XLSX
+
+Project interactions:
+
+- click project row: focus project
 - double-click project row: select active project
-- click disclosure icon: expand/collapse project files
-- click plus icon: create project
-- click edit icon: toggle project edit mode
-- in edit mode, each project row exposes edit/delete actions
+- disclosure icon: expand project files
+- only one project should be expanded at a time
+- edit mode exposes project edit/delete actions
+- file edit/delete actions stay hidden until the file/project editing mode is active
 
-Project row states:
-
-```text
-default
-hover
-focused
-selected
-editing
-delete-confirming
-```
-
-File tree:
-
-- files appear nested under their project
-- each file shows name and ingestion status
-- file rows are lightweight, not full cards
-- failed files should expose a concise error hint
-
-### Lower Section: Upload Zone
-
-Approximate height:
-
-```text
-40%
-```
-
-Purpose:
-
-- drag files into the active project
-- support click-to-select file upload
-- show supported file types
-- show upload/ingestion status
-
-Rules:
-
-- upload requires an active selected project
-- disabled state when no project is selected
-- accepted types: PDF, DOCX, TXT, XLSX
-- upload zone should be visually quiet and always available
-
-## Right Chat Workspace
-
-The right side is the primary experience.
-
-### Empty Chat State
+### Right Chat Workspace
 
 Before the first user message:
 
-- show an elegant, simple title
-- show a short subtitle only if useful
-- show a translucent input box
-- show send button attached to or adjacent to input
+- show a simple title
+- show a translucent composer
+- keep copy minimal
 
-Suggested title style:
+After the first user message:
 
-```text
-Ask your local knowledge base
-```
-
-Keep copy minimal. Do not explain features in paragraphs.
-
-### Active Conversation State
-
-After the first message:
-
-- input/composer moves to the lower part of the right panel
 - conversation appears above
-- messages render in a calm, readable layout
-- citations are visible under assistant answers
-- feedback controls appear near assistant answers
+- composer moves to the lower area
+- composer auto-grows with text
+- manual textarea resizing is disabled
+- send button stays beside the composer and vertically centered
+- assistant answers show citations and feedback controls
 
-Composer behavior:
+Floating tool links:
 
-- transparent or lightly translucent surface
-- clear send button
-- keyboard submit
-- disabled state while sending
-- no layout jump when answer streams or loads
+- Retrieval
+- Eval
+- Metrics
 
-V1 can be non-streaming, but the UI should tolerate a loading assistant state.
+These should stay available without covering the composer.
 
-## Retrieval Playground Entry
+## Retrieval Playground
 
-Retrieval Playground is secondary in v1.
+Purpose:
 
-Use:
+- inspect raw retrieval behavior
+- tune retrieval settings before changing chat or eval behavior
+- compare vector, keyword, hybrid, and reranker behavior
 
-```text
-lightweight floating button
-```
+User flow:
 
-Placement:
+1. choose a project
+2. enter a natural-language query
+3. select retrieval mode
+4. tune top-k and hybrid weights
+5. optionally enable reranker
+6. inspect chunks, scores, metadata, and retrieval log ID
 
-- bottom-right or right-middle of chat workspace
-- should not cover composer
-- visible enough to discover, quiet enough not to dominate
+Input meaning:
 
-Behavior options:
+- the query input is the same kind of question a user would ask in chat
+- the page returns retrieved context only, not a final LLM answer
 
-```text
-Option A: navigate to /retrieval
-Option B: open a right-side overlay
-Option C: open a modal/drawer
-```
+Difference from Eval:
 
-Recommended v1:
+- Retrieval Playground is for one-off inspection and tuning.
+- Eval is for repeatable datasets, metrics, history, comparison, and export.
 
-```text
-Option A: route to /retrieval
-```
+## Eval Workspace
 
-Reason:
+The Eval page should be compact and locally scrollable.
 
-- simplest to implement
-- keeps chat workspace clean
-- avoids complex overlay state
+Left side:
+
+- projects
+- datasets
+- local scrolling
+- add/edit/delete through lightweight header actions and modals
+- no always-visible destructive actions
+
+Right side:
+
+- selected dataset context
+- tabs for `Questions` and `History`
+- run configuration
+- result details
+- run compare panel when runs are selected
+
+Transient warnings:
+
+- use a top-centered toast-style bubble
+- do not keep warnings fixed in the page layout
+
+Dataset/question actions:
+
+- create dataset through modal
+- edit/delete dataset through modal or contextual action
+- create question through modal
+- delete question uses the same destructive button style as dataset delete
+
+Eval run controls:
+
+- retrieval mode
+- top-k
+- vector weight
+- keyword weight
+- reranker enabled
+- reranker candidate limit
+- LLM judge enabled
+
+History behavior:
+
+- list previous runs
+- allow loading a run
+- allow selecting runs for compare
+- compare up to a small bounded number of runs
+- export run CSV/JSON
+- export compare CSV
+
+## Metrics Workspace
+
+Purpose:
+
+- show whether chat requests are fast, cited, and traceable
+- provide quick debugging links back to retrieval logs
+
+Current metrics:
+
+- request count
+- average total latency
+- average retrieval latency
+- average generation latency
+- average citation count
+- recent chat requests
+
+The page is intentionally lightweight. It should not become the primary app surface.
 
 ## API Client Contract
 
-`lib/api.ts` should group calls by domain:
+`lib/api.ts` groups calls by domain:
 
 ```text
 projectsApi
 documentsApi
 chatApi
+feedbackApi
 retrievalApi
+evalApi
 metricsApi
+systemApi
 ```
 
 Rules:
 
 - centralize backend base URL
 - parse JSON consistently
-- surface API errors as typed frontend errors
+- surface API errors as frontend errors
 - avoid duplicating fetch logic inside components
 
 Environment:
@@ -323,22 +260,35 @@ NEXT_PUBLIC_API_BASE_URL
 
 ## State Model
 
-Frontend v1 state:
+Core main-page state:
 
 ```text
 projects
-expandedProjectIds
+documentsByProject
+expandedProjectId
 activeProjectId
 editMode
 activeConversationId
-pendingUploads
 chatMessages
+pendingUploads
 isSendingMessage
 ```
 
-Keep state local or in a small store. If prop drilling becomes awkward, use a lightweight Zustand store.
+Eval state:
 
-Do not introduce complex server-state tooling unless the implementation becomes noisy. TanStack Query can be added later.
+```text
+selectedProjectId
+selectedDatasetId
+questions
+runs
+activeRun
+compareRunIds
+runConfig
+toastMessage
+activeTab
+```
+
+Keep state local while the app remains small. Introduce server-state tooling only if manual loading/error state becomes noisy.
 
 ## UI State Rules
 
@@ -351,132 +301,75 @@ Every primary area should handle:
 
 Examples:
 
-```text
-No projects -> sidebar shows add project action
-No active project -> upload zone disabled and chat composer disabled
-Project has no files -> expanded file list shows empty hint
-Upload failed -> file/upload row shows error status
-Provider unavailable -> chat shows inline error near composer
-Retrieval failed -> retrieval page shows error state
-```
-
-## Visual Direction
-
-Use a minimal product UI:
-
-- neutral background
-- light translucent chat composer
-- subtle borders
-- restrained shadows
-- one accent color
-- icon-first sidebar actions
-- compact project rows
-- no nested cards
-
-Specific visual notes:
-
-- plus icon represents add project
-- edit icon toggles project edit mode
-- delete should appear only in edit mode or confirmation state
-- selected project should be obvious but not loud
-- file status should be readable without relying only on color
+- no projects: sidebar shows add project action
+- no active project: upload zone and chat composer are disabled
+- project has no files: expanded file list shows empty hint
+- upload failed: file row shows failed status
+- provider unavailable: chat shows inline error near composer
+- retrieval failed: retrieval page shows error state
+- eval dataset missing: top-centered toast warning
+- metrics empty: summary shows zero/null values and empty recent list
 
 ## Accessibility And Interaction Rules
 
-- icon buttons need labels/tooltips
-- double-click selection must have an accessible single-click or keyboard equivalent
+- icon buttons need labels or accessible names
+- double-click selection needs a single-click or keyboard fallback
 - file upload must support click-to-select
-- form labels must not rely on placeholders
-- disabled states must explain what is missing
+- form labels must not rely only on placeholders
+- disabled states should explain what is missing
 - focus states must be visible
-- send button must be reachable by keyboard
-- upload drop zone must not be the only way to upload files
+- send button must be keyboard reachable
+- local scroll regions should not trap keyboard navigation
 
-## Implementation Sequence
+## Verification Commands
 
-1. Add shared frontend types.
-2. Add API client wrapper.
-3. Add top bar.
-4. Add workbench shell layout.
-5. Add project sidebar layout.
-6. Add project list and project row states.
-7. Add project add/edit/delete interactions.
-8. Add collapsible project file tree.
-9. Add sidebar upload zone.
-10. Add chat workspace empty state.
-11. Add message composer.
-12. Add message list.
-13. Add citation list.
-14. Add feedback controls.
-15. Add active conversation layout transition.
-16. Add Retrieval Playground floating button.
-17. Add minimal retrieval route/page.
-18. Add loading/empty/error states.
-19. Run lint/build checks.
-
-## Test And Verification Plan
-
-Build checks:
+Frontend:
 
 ```bash
 cd apps/web
 pnpm lint
-pnpm build
+node --experimental-strip-types --test lib/*.test.mjs
+```
+
+Manual route checks:
+
+```text
+GET /
+GET /retrieval
+GET /eval
+GET /metrics
 ```
 
 Manual workflow checks:
 
-1. Open `/`.
-2. Create a project with the plus button.
-3. Toggle edit mode with the edit icon.
-4. Edit and delete controls appear per project row.
-5. Expand a project to show files.
-6. Double-click a project row to select it.
-7. Upload a TXT file through the lower sidebar upload zone.
-8. Confirm file appears under the selected project.
-9. Ask the first chat question from the centered empty state.
-10. Confirm composer moves to the lower chat area.
-11. Confirm conversation appears above the composer.
-12. Confirm citations and feedback render after an answer.
-13. Use floating Retrieval Playground button.
-14. Confirm retrieval page opens and can run a query.
-
-Responsive checks:
-
-- desktop: sidebar and chat side by side
-- tablet: sidebar can narrow or collapse
-- mobile: sidebar collapses behind menu, chat remains primary
-
-Focus checks:
-
-- add project button
-- edit mode button
-- project row
-- file tree disclosure
-- upload zone
-- chat composer
-- send button
-- floating retrieval button
+1. Create and select a project.
+2. Upload a supported file.
+3. Expand projects and confirm only one remains expanded.
+4. Send a chat message and confirm composer behavior.
+5. Open Retrieval and run a query.
+6. Open Eval, create a dataset/question, run eval, and view history.
+7. Select runs for compare and export.
+8. Open Metrics and inspect recent chat requests.
 
 ## Acceptance Criteria
 
-- Main frontend opens as a single lightweight workbench.
+- Main frontend opens as a lightweight workbench.
 - Top bar remains visible.
-- Left sidebar is split into project/file area and upload area.
-- Projects can be added from a plus icon.
-- Project edit mode exposes edit/delete actions per row.
-- Project files can be collapsed and expanded.
-- A project can be selected, with double-click supported and accessible fallback available.
+- Main page desktop layout does not require page-level scroll for core controls.
+- Left sidebar uses local scrolling for long project/file lists.
+- Only one project is expanded at a time.
 - Upload zone accepts supported files for the active project.
-- Right workspace starts with a simple title and translucent composer.
-- After first message, composer moves lower and conversation occupies the main area.
+- Chat composer auto-grows and keeps send aligned.
 - Citations and feedback controls render for assistant answers.
-- Retrieval Playground is accessible through a lightweight floating button.
-- Frontend builds successfully.
-- No git commit is made.
+- Retrieval page exposes retrieval tuning and result inspection.
+- Eval page exposes datasets, questions, history, run settings, compare, and export.
+- Metrics page exposes chat metrics and recent request rows.
+- Frontend checks pass.
 
-## Open Design Notes
+## Future Work
 
-- The UI should prioritize chat and file/project context over dashboards.
-- Retrieval Playground can start as a route for simplicity; overlay/drawer can come later.
-- Metrics can appear as subtle status text later, not as a full dashboard in v1.
+- Mobile sidebar collapse refinement.
+- Document preview/source viewer.
+- Prompt/model settings page.
+- Better charting for metrics trends.
+- Stronger visual linking from metrics rows to retrieval log detail.

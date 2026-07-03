@@ -4,27 +4,45 @@ flowchart LR
 
     API --> DB[(PostgreSQL + pgvector)]
     API --> Redis[(Redis)]
-    API --> LLM[OpenAI-Compatible LLM API]
-    API --> Embedding[OpenAI-Compatible Embedding API]
+    API --> LLM[OpenAI-Compatible Chat API]
+    API --> EmbedLocal[Ollama Local Embedding]
+    API --> EmbedCloud[OpenAI-Compatible Embedding Fallback]
 
     Redis --> Worker[RQ Worker]
     Worker --> Storage[Local File Storage]
     Worker --> DB
-    Worker --> Embedding
+    Worker --> EmbedLocal
+    Worker -. optional .-> EmbedCloud
 
     DB --> API
     API --> Web
+
+    subgraph FrontendRoutes[Frontend Routes]
+        Home[/Workbench Chat/]
+        Retrieval[/Retrieval Playground/]
+        Eval[/Eval Workspace/]
+        Metrics[/Metrics Dashboard/]
+    end
+
+    Web --> Home
+    Web --> Retrieval
+    Web --> Eval
+    Web --> Metrics
 
     subgraph ProjectIsolation[Project Isolation]
         ProjectID[project_id]
         Docs[documents]
         Chunks[chunks]
         Conversations[conversations]
-        Logs[retrieval and eval logs]
+        Logs[retrieval logs]
+        EvalRows[eval datasets, runs, results]
+        ChatMetrics[chat request metrics]
         ProjectID --> Docs
         ProjectID --> Chunks
         ProjectID --> Conversations
         ProjectID --> Logs
+        ProjectID --> EvalRows
+        ProjectID --> ChatMetrics
     end
 
-    API -. every retrieval/chat/eval query filters by .-> ProjectID
+    API -. every retrieval/chat/eval/metrics query filters by .-> ProjectID

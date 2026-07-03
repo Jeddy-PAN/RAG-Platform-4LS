@@ -15,11 +15,11 @@ This is not a one-page RAG demo. It is a small production-style system with clea
 - Keyword search: PostgreSQL full-text search
 - Queue: Redis + RQ
 - LLM: API key first, OpenAI-compatible chat provider
-- Embedding: API embedding first, local embedding optional
-- Local model: Ollama optional
+- Embedding: local Ollama `bge-m3` first, OpenAI-compatible cloud embedding fallback
+- Local model: Ollama for embedding; local chat is deferred
 - RAG core: custom lightweight RAG pipeline
 - Document parsing: PyMuPDF, python-docx, native TXT reader, openpyxl
-- Evaluation: custom lightweight eval and logs
+- Evaluation: custom lightweight eval, LLM judge option, run comparison, and logs
 - Deployment: Docker Compose
 - Auth: no user login in v1
 - Isolation: multi-project / multi-knowledge-base isolation through project_id
@@ -48,7 +48,7 @@ Architecture diagram:
 
 1. Frontend
    - Next.js application.
-   - Provides project management, document management, RAG chat, retrieval playground, and dashboard views.
+   - Provides project management, document management, RAG chat, retrieval playground, eval, and metrics views.
 
 2. Backend API
    - FastAPI service.
@@ -130,7 +130,7 @@ Each chunk stores:
 
 ### 5. Embedding And Indexing
 
-Embedding uses an OpenAI-compatible API provider first. Local embedding is optional for later.
+Embedding uses local Ollama `bge-m3` first. OpenAI-compatible cloud embedding remains available as a fallback if local quality, latency, or operational convenience becomes a problem.
 
 The indexing worker:
 
@@ -147,6 +147,14 @@ Provider configuration should not be hard-coded to one vendor. It should support
 - embedding_model
 - embedding_dimensions
 
+Current default:
+
+```text
+provider = ollama
+model = bge-m3
+dimensions = 1024
+```
+
 ### 6. Hybrid Retrieval
 
 V1 retrieval combines:
@@ -162,7 +170,7 @@ Suggested retrieval modes:
 - keyword
 - hybrid
 
-The retrieval playground should expose:
+The retrieval playground exposes:
 
 - query
 - retrieval mode
@@ -173,8 +181,10 @@ The retrieval playground should expose:
 - returned chunks
 - raw scores
 - final fused score
+- reranker settings
+- retrieval log details
 
-Reranking is not required in the first implementation, but the retrieval interface should allow adding a reranker later.
+The current reranker is a lightweight local keyword-overlap reranker. It is mainly for learning, inspection, and before/after comparison; a stronger model reranker can be added behind the same interface later.
 
 ### 7. Answer Generation
 
@@ -220,11 +230,11 @@ Feedback stores:
 
 This supports later evaluation and quality tracking.
 
-### 10. Eval And Logs
+### 10. Eval, Logs, And Metrics
 
 V1 uses custom lightweight evaluation and logs instead of external observability tools.
 
-The system should record:
+The system records:
 
 - query text
 - retrieval mode
@@ -237,15 +247,20 @@ The system should record:
 - total latency
 - model name
 - feedback
+- chat request metrics
 
-Initial eval metrics:
+Eval supports:
 
 - top-k hit rate
 - citation coverage
 - answer latency
 - retrieval latency
-- useful feedback rate
 - no-answer refusal rate
+- answer match rate from expected notes
+- optional LLM judge result
+- reranker baseline comparison
+- run compare
+- CSV and JSON export
 
 Eval datasets can be simple rows with:
 
@@ -253,6 +268,15 @@ Eval datasets can be simple rows with:
 - expected document or chunk
 - optional expected answer notes
 - should_answer boolean
+
+Metrics v1 focuses on successful chat requests:
+
+- request count
+- average total latency
+- average retrieval latency
+- average generation latency
+- average citation count
+- recent request list linked to retrieval logs
 
 ## Data Model
 
@@ -268,6 +292,7 @@ Initial tables:
 - retrieval_logs
 - retrieval_log_chunks
 - feedback
+- chat_request_metrics
 - eval_datasets
 - eval_questions
 - eval_runs
@@ -282,6 +307,7 @@ Important schema rules:
 - Chunks include both embedding vector and full-text search vector.
 - Documents have ingestion status.
 - Logs should be queryable by project, model, retrieval mode, and time.
+- Chat metrics should stay project-scoped and link back to retrieval logs.
 
 ## API Shape
 
@@ -295,7 +321,8 @@ Suggested endpoint groups:
 - /api/projects/{project_id}/conversations
 - /api/projects/{project_id}/feedback
 - /api/projects/{project_id}/eval
-- /api/settings/models
+- /api/projects/{project_id}/metrics
+- /api/system/config
 - /api/health
 
 Important API behavior:
@@ -303,6 +330,8 @@ Important API behavior:
 - Chat APIs should support streaming eventually, but non-streaming is acceptable for the first backend milestone.
 - Retrieval APIs should return debug details for learning and tuning.
 - Document upload should return a document and job status.
+- Eval run APIs are dataset-scoped under `/api/projects/{project_id}/eval/datasets/{dataset_id}/runs`.
+- Metrics v1 exposes `/api/projects/{project_id}/metrics/chat`.
 
 ## Frontend Workbench
 
@@ -313,7 +342,7 @@ Primary layout:
 - top bar
 - left sidebar
 - right chat workspace
-- floating Retrieval Playground entry
+- floating Retrieval, Eval, and Metrics entries
 
 Left sidebar:
 
@@ -332,14 +361,26 @@ Right chat workspace:
 
 Retrieval Playground:
 
-- accessed through a lightweight floating button
+- accessed through a lightweight floating button group
 - can open as a route first
 - compares vector, keyword, and hybrid retrieval
 - shows returned chunks and scores
+- can show reranker effects
+
+Eval page:
+
+- manages project-scoped datasets and questions
+- runs retrieval/chat evals with optional reranker and LLM judge
+- shows run history, result filters, run compare, and export actions
+
+Metrics page:
+
+- shows chat request latency and citation aggregates
+- lists recent chat requests
+- links request rows back to retrieval logs
 
 Later pages:
 
-- Eval Dashboard
 - Prompt / Model Settings
 - Activity / Logs
 - Document Viewer
@@ -355,10 +396,9 @@ LLM_BASE_URL=https://api.example.com/v1
 LLM_API_KEY=replace-me
 LLM_MODEL=example-chat-model
 
-EMBEDDING_PROVIDER=openai_compatible
-EMBEDDING_BASE_URL=https://api.example.com/v1
-EMBEDDING_API_KEY=replace-me
-EMBEDDING_MODEL=example-embedding-model
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_BASE_URL=http://host.docker.internal:11434
+EMBEDDING_MODEL=bge-m3
 EMBEDDING_DIMENSIONS=1024
 
 DATABASE_URL=postgresql+psycopg://rag:rag@postgres:5432/rag
@@ -401,7 +441,10 @@ Optional later:
 13. Feedback logging
 14. Lightweight eval dataset and run APIs
 15. Single-screen frontend workbench
-16. Documentation and sample data
+16. Retrieval Playground UI
+17. Eval UI with compare/export
+18. Metrics UI
+19. Documentation and sample data
 
 ## Risks And Mitigations
 
@@ -429,6 +472,9 @@ Optional later:
 - User can ask questions against one project without retrieving other projects' content.
 - Answers include citations linked to source chunks.
 - Retrieval Playground can compare vector, keyword, and hybrid search.
+- Retrieval Playground can show reranker before/after effects.
 - Feedback is recorded for answers.
+- Eval datasets can be run and compared inside one project.
+- Chat metrics include latency and citation count summaries.
 - Basic logs include query, retrieved chunks, scores, answer, citations, latency, and model.
 - The system runs locally with Docker Compose.

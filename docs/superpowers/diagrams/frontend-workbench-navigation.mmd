@@ -4,15 +4,15 @@ flowchart LR
     B --> C[Left Sidebar]
     B --> D[Right Chat Workspace]
 
-    C --> E[Upper 60%: Projects]
-    C --> F[Lower 40%: Upload Zone]
+    C --> E[Projects and Files]
+    C --> F[Upload Zone]
 
     E --> G[Plus Icon: Add Project]
     E --> H[Edit Icon: Toggle Edit Mode]
     E --> I[Project Rows]
-    I --> J[Expandable File Tree]
-    I --> K[Double-click or keyboard action selects project]
-    H --> L[Per-row Edit/Delete Actions]
+    I --> J[Single Expanded File Tree]
+    I --> K[Double-click or accessible action selects project]
+    H --> L[Project and File Edit/Delete Actions]
 
     F --> M[Drag and Drop Files]
     F --> N[Click to Select Files]
@@ -20,21 +20,32 @@ flowchart LR
     N --> O
 
     D --> P{Conversation started?}
-    P -->|No| Q[Centered Title + Translucent Composer]
-    P -->|Yes| R[Conversation Area]
+    P -->|No| Q[Centered Title and Composer]
+    P -->|Yes| R[Scrollable Conversation Area]
     R --> S[Assistant Answers]
     S --> T[Citations]
     S --> U[Feedback Controls]
-    R --> V[Composer near bottom]
+    R --> V[Auto-growing Composer]
 
-    D --> W[Floating Retrieval Button]
-    W --> X[Retrieval Playground Route]
+    D --> W[Floating Tool Links]
+    W --> X[Retrieval Route]
+    W --> Y[Eval Route]
+    W --> Z[Metrics Route]
+
+    Y --> YA[Questions Tab]
+    Y --> YB[History Tab]
+    YB --> YC[Run Compare and Export]
+
+    Z --> ZA[Chat Metric Summary]
+    Z --> ZB[Recent Request List]
 
     subgraph ProjectContext[Active Project Context]
         K
         O
         R
         X
+        Y
+        Z
     end
 
-    ProjectContext -. all API calls include .-> Y[project_id]
+    ProjectContext -. all API calls include .-> PID[project_id]

@@ -241,7 +241,7 @@ Full source code belongs in the implementation phase, not in planning documents.
 
 **Output plan file:** `docs/superpowers/plans/evaluation-and-metrics-plan.md`
 
-**Goal:** Add lightweight eval datasets, eval runs, retrieval hit rate, citation coverage, latency metrics, and dashboard-ready summaries.
+**Goal:** Add lightweight eval datasets, eval runs, retrieval hit rate, citation coverage, optional LLM judge, reranker comparison, latency metrics, and dashboard-ready summaries.
 
 **Diagram:** `docs/superpowers/diagrams/evaluation-and-metrics-flow.mmd`
 
@@ -258,14 +258,15 @@ Full source code belongs in the implementation phase, not in planning documents.
 
 - Eval questions can be created per project.
 - Eval runs execute retrieval and answer generation.
-- Results include hit rate, citation coverage, refusal behavior, and latency.
+- Results include hit rate, citation coverage, refusal behavior, judge metadata, and latency.
 - Metrics endpoints are scoped by project.
+- Eval runs can be compared and exported.
 
 ## Sub-Plan 8: Frontend Workbench
 
 **Output plan file:** `docs/superpowers/plans/frontend-workbench-plan.md`
 
-**Goal:** Build the initial lightweight Next.js workbench with top bar, project/file sidebar, upload zone, chat workspace, and floating Retrieval Playground entry.
+**Goal:** Build the lightweight Next.js workbench with top bar, project/file sidebar, upload zone, chat workspace, and floating Retrieval/Eval/Metrics entries.
 
 **Diagram:** `docs/superpowers/diagrams/frontend-workbench-navigation.mmd`
 
@@ -274,6 +275,8 @@ Full source code belongs in the implementation phase, not in planning documents.
 - Create: `apps/web/app/layout.tsx`
 - Create: `apps/web/app/page.tsx`
 - Create: `apps/web/app/retrieval/page.tsx`
+- Create: `apps/web/app/eval/page.tsx`
+- Create: `apps/web/app/metrics/page.tsx`
 - Create: `apps/web/components/top-bar.tsx`
 - Create: `apps/web/components/workbench-shell.tsx`
 - Create: `apps/web/components/project-sidebar.tsx`
@@ -285,6 +288,8 @@ Full source code belongs in the implementation phase, not in planning documents.
 - Create: `apps/web/components/citation-list.tsx`
 - Create: `apps/web/components/retrieval-floating-button.tsx`
 - Create: `apps/web/components/retrieval-results.tsx`
+- Create: `apps/web/components/eval-workspace.tsx`
+- Create: `apps/web/components/metrics-workspace.tsx`
 - Create: `apps/web/lib/api.ts`
 
 **Required checks:**
@@ -293,7 +298,7 @@ Full source code belongs in the implementation phase, not in planning documents.
 - User can upload supported documents.
 - User can see ingestion status.
 - User can chat with citations.
-- User can access Retrieval Playground from the floating button.
+- User can access Retrieval, Eval, and Metrics from the floating tool links.
 
 ## Sub-Plan 9: Documentation And Local Usage
 
