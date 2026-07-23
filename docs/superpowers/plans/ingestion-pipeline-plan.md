@@ -244,7 +244,7 @@ For one ingestion job:
 4. insert document sections
 5. chunk sections
 6. call embedding provider
-7. delete prior chunks for the same document if this is a reindex
+7. soft-delete prior chunks (`is_active=False`) for the same document to preserve existing message citations
 8. insert new chunks with embeddings
 9. let DB trigger populate `search_vector`
 10. mark job `completed`
@@ -287,7 +287,7 @@ Initial v1 behavior:
 
 - upload creates first ingestion job
 - reindex creates a new ingestion job for the same document
-- final replacement deletes old sections/chunks for the document and inserts new ones
+- final replacement soft-deletes old chunks (`is_active=False`) for the document and inserts new ones. Old document sections are hard-deleted since no references point to them.
 
 Preferred safety rule:
 

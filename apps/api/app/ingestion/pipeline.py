@@ -1,7 +1,7 @@
 from pathlib import Path
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.ingestion.chunker import ChunkCandidate, chunk_sections
@@ -65,7 +65,11 @@ def ingest_document_job(
         provider = embedding_provider or get_embedding_provider_from_settings()
         vectors = provider.embed_texts([candidate.text for candidate in chunk_candidates])
 
-        db.execute(delete(Chunk).where(Chunk.document_id == document_id))
+        db.execute(
+            update(Chunk)
+            .where(Chunk.document_id == document_id)
+            .values(is_active=False)
+        )
         db.execute(delete(DocumentSection).where(DocumentSection.document_id == document_id))
         db.flush()
 

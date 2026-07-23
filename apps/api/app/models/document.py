@@ -58,7 +58,7 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="document",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge, refresh-expire, expunge",
     )
     ingestion_jobs: Mapped[list["IngestionJob"]] = relationship(
         back_populates="document",

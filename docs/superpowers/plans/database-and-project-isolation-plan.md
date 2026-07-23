@@ -166,6 +166,7 @@ ingestion_job.status = queued | running | completed | failed
 - `source_metadata`
 - `embedding`
 - `search_vector`
+- `is_active` (boolean, default true — soft delete preserves citations)
 - `created_at`
 - `updated_at`
 
@@ -175,12 +176,14 @@ Indexes:
 - `(project_id, chunk_index)`
 - `content_hash`
 - `search_vector` GIN index
+- `is_active`
 - vector index on `embedding`
 
-Important note:
+Important notes:
 
 - The initial vector dimension should match the configured embedding provider.
 - If the embedding model dimension changes, add a migration instead of silently changing the column.
+- Chunks use soft delete (`is_active=False`) on reindex and document deletion, preserving `message_citations` that reference them. Retrieval queries must filter `is_active=True`. Physically deleting a project still cascade-deletes chunks through the FK.
 
 ### Conversation Tables
 

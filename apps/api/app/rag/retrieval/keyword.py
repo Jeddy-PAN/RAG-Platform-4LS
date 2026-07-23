@@ -23,7 +23,7 @@ def retrieve_keyword(
     rows = db.execute(
         select(Chunk, Document)
         .join(Document, Document.id == Chunk.document_id)
-        .where(Chunk.project_id == project_id)
+        .where(Chunk.project_id == project_id, Chunk.is_active == True)
     ).all()
 
     candidates: list[RetrievalCandidate] = []

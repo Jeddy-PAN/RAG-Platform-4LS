@@ -32,7 +32,7 @@ def retrieve_vector(
     rows = db.execute(
         select(Chunk, Document)
         .join(Document, Document.id == Chunk.document_id)
-        .where(Chunk.project_id == project_id, Chunk.embedding.is_not(None))
+        .where(Chunk.project_id == project_id, Chunk.is_active == True, Chunk.embedding.is_not(None))
     ).all()
 
     candidates: list[RetrievalCandidate] = []
