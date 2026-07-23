@@ -90,12 +90,20 @@ export function DashboardPanel({
     return (
       <main className="dashboard">
         <div className="kb-home">
-          <div className="kb-home-header">
-            <h2>Knowledge Bases</h2>
-            <button className="btn btn-primary" onClick={onCreateProject} type="button">
-              + New Project
+          {/* Hero card */}
+          <div className="kb-hero-card">
+            <div className="kb-hero-content">
+              <span className="kb-hero-icon">🗂️</span>
+              <div>
+                <h2>Knowledge Bases</h2>
+                <p>Manage your RAG projects and documents</p>
+              </div>
+            </div>
+            <button className="db-btn db-btn-primary" onClick={onCreateProject} type="button">
+              + Create Knowledge Base
             </button>
           </div>
+
           {projects.length === 0 ? (
             <div className="dashboard-empty">
               <span className="empty-icon">📁</span>
@@ -109,23 +117,24 @@ export function DashboardPanel({
                   className="project-card"
                   onClick={() => onSelectProject(project.id)}
                 >
+                  <div className="project-card-icon">📁</div>
                   <h3>{project.name}</h3>
                   <div className="card-meta">
                     <span>{project.description ?? "No description"}</span>
                   </div>
                   <div className="card-meta">
-                    <span>Created {formatDate(project.created_at)}</span>
+                    <span>{formatDate(project.created_at)}</span>
                   </div>
                   <div className="card-actions" onClick={(e) => e.stopPropagation()}>
                     <button
-                      className="btn btn-sm"
+                      className="db-btn db-btn-sm"
                       onClick={() => onRenameProject(project)}
                       type="button"
                     >
                       Rename
                     </button>
                     <button
-                      className="btn btn-sm btn-danger"
+                      className="db-btn db-btn-sm db-btn-danger"
                       onClick={() => onDeleteProject(project)}
                       type="button"
                     >
@@ -153,13 +162,13 @@ export function DashboardPanel({
               ) : null}
             </div>
             <div className="detail-actions">
-              <button className="btn btn-primary" onClick={onStartChat} type="button">
+              <button className="db-btn db-btn-primary" onClick={onStartChat} type="button">
                 Start Chat
               </button>
-              <button className="btn" onClick={() => onRenameProject(selectedProject)} type="button">
+              <button className="db-btn" onClick={() => onRenameProject(selectedProject)} type="button">
                 Rename
               </button>
-              <button className="btn btn-danger" onClick={() => onDeleteProject(selectedProject)} type="button">
+              <button className="db-btn db-btn-danger" onClick={() => onDeleteProject(selectedProject)} type="button">
                 Delete Project
               </button>
             </div>
@@ -168,13 +177,13 @@ export function DashboardPanel({
           <section className="detail-section">
             <h3>Tools</h3>
             <div style={{ display: "flex", gap: 10 }}>
-              <a href="/retrieval" className="btn">
+              <a href="/retrieval" className="db-btn">
                 🔍 Retrieval Playground
               </a>
-              <a href="/eval" className="btn">
+              <a href="/eval" className="db-btn">
                 📊 Evaluation
               </a>
-              <a href="/metrics" className="btn">
+              <a href="/metrics" className="db-btn">
                 📈 Metrics
               </a>
             </div>
@@ -205,7 +214,7 @@ export function DashboardPanel({
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <button
-                          className="btn btn-sm"
+                          className="db-btn db-btn-sm"
                           onClick={() => onReindexDocument(selectedProject.id, doc)}
                           disabled={doc.status !== "indexed"}
                           type="button"
@@ -213,7 +222,7 @@ export function DashboardPanel({
                           Reindex
                         </button>
                         <button
-                          className="btn btn-sm btn-danger"
+                          className="db-btn db-btn-sm db-btn-danger"
                           onClick={() => onDeleteDocument(selectedProject.id, doc)}
                           style={{ marginLeft: 6 }}
                           type="button"
@@ -244,7 +253,7 @@ export function DashboardPanel({
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       <span className="conv-time">{formatRelative(conv.updated_at)}</span>
                       <button
-                        className="btn btn-sm btn-danger"
+                        className="db-btn db-btn-sm db-btn-danger"
                         onClick={(e) => {
                           e.stopPropagation();
                           onDeleteConversation(conv);

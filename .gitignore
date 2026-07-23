@@ -29,6 +29,7 @@ data/
 uploads/
 tmp/
 local_tests/
+image.png
 
 # OS / editors
 .DS_Store

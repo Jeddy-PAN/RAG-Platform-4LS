@@ -26,16 +26,22 @@ export function AppSidebar({
   onDeleteConversation,
   onClickKnowledgeBases
 }: AppSidebarProps) {
-  const [kbExpanded, setKbExpanded] = useState(true);
+  const [kbExpanded, setKbExpanded] = useState(false);
+  const [chatsExpanded, setChatsExpanded] = useState(false);
 
   return (
     <aside className="app-sidebar">
       <section className="sidebar-section">
-        <div
-          className="sidebar-section-header"
-          onClick={() => setKbExpanded((v) => !v)}
-        >
-          <span>Knowledge Bases</span>
+        <div className="sidebar-section-header">
+          <span
+            className="arrow"
+            onClick={(e) => { e.stopPropagation(); setKbExpanded((v) => !v); }}
+          >
+            {kbExpanded ? "▾" : "▸"}
+          </span>
+          <span style={{ flex: 1, cursor: "pointer" }} onClick={onClickKnowledgeBases}>
+            Knowledge Bases
+          </span>
           <span className="count">{projects.length}</span>
         </div>
         {kbExpanded ? (
@@ -60,37 +66,43 @@ export function AppSidebar({
       </section>
 
       <section className="sidebar-section">
-        <div className="sidebar-section-header">
+        <div
+          className="sidebar-section-header"
+          onClick={() => setChatsExpanded((v) => !v)}
+        >
+          <span className="arrow">{chatsExpanded ? "▾" : "▸"}</span>
           <span>Chats</span>
           <span className="count">{allConversations.length}</span>
         </div>
-        <div className="sidebar-section-body">
-          {allConversations.length === 0 ? (
-            <p className="sidebar-empty">No conversations yet</p>
-          ) : (
-            allConversations.map((conv) => (
-              <div
-                key={conv.id}
-                className={`chat-sidebar-item ${selectedConversationId === conv.id ? "selected" : ""}`}
-                onClick={() => onSelectConversation(conv)}
-              >
-                <span className="title">{conv.title ?? "Untitled"}</span>
-                <span className="project-tag">{conv.project_name}</span>
-                <button
-                  className="delete-btn"
-                  aria-label="Delete conversation"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteConversation(conv);
-                  }}
-                  type="button"
+        {chatsExpanded ? (
+          <div className="sidebar-section-body">
+            {allConversations.length === 0 ? (
+              <p className="sidebar-empty">No conversations yet</p>
+            ) : (
+              allConversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  className={`chat-sidebar-item ${selectedConversationId === conv.id ? "selected" : ""}`}
+                  onClick={() => onSelectConversation(conv)}
                 >
-                  ×
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+                  <span className="title">{conv.title ?? "Untitled"}</span>
+                  <span className="project-tag">{conv.project_name}</span>
+                  <button
+                    className="delete-btn"
+                    aria-label="Delete conversation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteConversation(conv);
+                    }}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        ) : null}
       </section>
     </aside>
   );
