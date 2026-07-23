@@ -1,3 +1,4 @@
+import shutil
 import uuid
 
 from fastapi import HTTPException, status
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.services.storage import get_upload_root
 
 
 def create_project(db: Session, payload: ProjectCreate) -> Project:
@@ -64,8 +66,14 @@ def update_project(db: Session, project_id: uuid.UUID, payload: ProjectUpdate) -
 
 
 def delete_project(db: Session, project_id: uuid.UUID) -> None:
-    """Delete a project and rely on database cascades for owned records."""
+    """Delete a project and rely on database cascades for owned records.
+
+    Also removes the project-scoped upload directory from local storage
+    to prevent orphaned files on disk.
+    """
 
     project = get_project(db, project_id)
     db.delete(project)
     db.commit()
+    project_dir = get_upload_root() / str(project_id)
+    shutil.rmtree(project_dir, ignore_errors=True)

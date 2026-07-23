@@ -119,7 +119,7 @@ Purpose:
 
 Purpose:
 
-- delete a project and all project-owned data through cascade behavior
+- delete a project and all project-owned data through cascade behavior, and remove the project-scoped upload directory from local storage
 
 ### Documents
 
