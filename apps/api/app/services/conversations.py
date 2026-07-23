@@ -133,3 +133,32 @@ def list_recent_messages(
     )
     messages.reverse()
     return [{"role": message.role.value, "content": message.content} for message in messages]
+
+
+def list_all_conversations(
+    db: Session,
+    limit: int = 50,
+) -> list[dict]:
+    """List recent conversations across all projects for the chat sidebar."""
+
+    from app.models.project import Project
+
+    rows = (
+        db.execute(
+            select(Conversation, Project.name)
+            .join(Project, Project.id == Conversation.project_id)
+            .order_by(Conversation.updated_at.desc())
+            .limit(limit)
+        )
+        .all()
+    )
+    return [
+        {
+            "id": conv.id,
+            "project_id": conv.project_id,
+            "project_name": project_name,
+            "title": conv.title,
+            "updated_at": conv.updated_at,
+        }
+        for conv, project_name in rows
+    ]

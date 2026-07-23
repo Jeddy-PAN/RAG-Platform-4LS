@@ -96,3 +96,15 @@ class ConversationDetailRead(ConversationRead):
     """Conversation with ordered messages."""
 
     messages: list[MessageRead]
+
+
+class AllConversationRead(BaseModel):
+    """Conversation summary returned for the global chat sidebar."""
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    project_name: str
+    title: str | None
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

@@ -1,6 +1,8 @@
 import type {
+  AllConversation,
   ChatMessageResponse,
   ChatMetricsResponse,
+  ConversationDetail,
   DocumentItem,
   DocumentUploadResponse,
   EvalDataset,
@@ -123,6 +125,20 @@ export const chatApi = {
       };
     }
   ) => jsonRequest<ChatMessageResponse>(`/api/projects/${projectId}/chat/messages`, "POST", payload)
+};
+
+export const conversationsApi = {
+  listAll: (limit = 50) =>
+    request<AllConversation[]>(`/api/conversations?limit=${limit}`),
+  listByProject: (projectId: UUID) =>
+    request<AllConversation[]>(`/api/projects/${projectId}/conversations`),
+  get: (projectId: UUID, conversationId: UUID) =>
+    request<ConversationDetail>(`/api/projects/${projectId}/conversations/${conversationId}`),
+  delete: async (projectId: UUID, conversationId: UUID) => {
+    await request<void>(`/api/projects/${projectId}/conversations/${conversationId}`, {
+      method: "DELETE"
+    });
+  }
 };
 
 export const feedbackApi = {

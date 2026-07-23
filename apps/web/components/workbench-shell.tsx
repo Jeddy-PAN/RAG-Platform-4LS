@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { chatApi, documentsApi, feedbackApi, projectsApi, systemApi } from "@/lib/api";
+import { chatApi, conversationsApi, documentsApi, feedbackApi, projectsApi, systemApi } from "@/lib/api";
 import { getNextExpandedProjectIds, openOnlyProject } from "@/lib/project-expansion";
 import type {
+  AllConversation,
   ChatMessage,
   DocumentItem,
   FeedbackRating,
@@ -11,14 +12,16 @@ import type {
   SystemConfig,
   UUID
 } from "@/lib/types";
-import { ChatWorkspace } from "./chat-workspace";
-import { ProjectSidebar } from "./project-sidebar";
+import { AppSidebar } from "./app-sidebar";
+import { DashboardPanel } from "./dashboard-panel";
 import { TopBar } from "./top-bar";
+
+type DashboardView = "kb-home" | "project-detail" | "chat";
 
 const DOCUMENT_POLL_INTERVAL_MS = 2500;
 
 function hasPendingDocuments(documents: DocumentItem[] | undefined): boolean {
-  return documents?.some((document) => document.status === "uploaded" || document.status === "processing") ?? false;
+  return documents?.some((doc) => doc.status === "uploaded" || doc.status === "processing") ?? false;
 }
 
 export function WorkbenchShell() {
@@ -27,9 +30,6 @@ export function WorkbenchShell() {
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<UUID>>(new Set());
   const [loadingDocuments, setLoadingDocuments] = useState<Set<UUID>>(new Set());
   const [busyDocumentIds, setBusyDocumentIds] = useState<Set<UUID>>(new Set());
-  const [activeProjectId, setActiveProjectId] = useState<UUID | null>(null);
-  const [conversationId, setConversationId] = useState<UUID | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -38,23 +38,49 @@ export function WorkbenchShell() {
   const [sidebarError, setSidebarError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
 
-  const activeProject = useMemo(
-    () => projects.find((project) => project.id === activeProjectId) ?? null,
-    [activeProjectId, projects]
+  // Dashboard view state
+  const [view, setView] = useState<DashboardView>("kb-home");
+  const [selectedProjectId, setSelectedProjectId] = useState<UUID | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<UUID | null>(null);
+
+  // Chat state
+  const [conversationId, setConversationId] = useState<UUID | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  // All conversations for sidebar
+  const [allConversations, setAllConversations] = useState<AllConversation[]>([]);
+
+  // Project-scoped conversations
+  const [projectConversations, setProjectConversations] = useState<AllConversation[]>([]);
+
+  const selectedProject = useMemo(
+    () => projects.find((p) => p.id === selectedProjectId) ?? null,
+    [selectedProjectId, projects]
   );
 
+  const selectedConversation = useMemo(
+    () => allConversations.find((c) => c.id === selectedConversationId) ?? null,
+    [selectedConversationId, allConversations]
+  );
+
+  const currentDocuments = useMemo(
+    () => (selectedProjectId ? documentsByProject[selectedProjectId] ?? [] : []),
+    [selectedProjectId, documentsByProject]
+  );
+
+  // Load initial data
   useEffect(() => {
     void loadProjects();
+    void loadAllConversations();
     void loadSystemConfig();
   }, []);
 
+  // Poll for document status changes
   useEffect(() => {
-    const projectIdsToPoll = [...expandedProjectIds].filter((projectId) =>
-      hasPendingDocuments(documentsByProject[projectId])
+    const projectIdsToPoll = [...expandedProjectIds].filter((id) =>
+      hasPendingDocuments(documentsByProject[id])
     );
-    if (projectIdsToPoll.length === 0) {
-      return;
-    }
+    if (projectIdsToPoll.length === 0) return;
 
     const intervalId = window.setInterval(() => {
       for (const projectId of projectIdsToPoll) {
@@ -65,22 +91,34 @@ export function WorkbenchShell() {
     return () => window.clearInterval(intervalId);
   }, [documentsByProject, expandedProjectIds]);
 
+  // ── Data Loaders ──────────────────────────────────────────
+
   async function loadProjects() {
     setIsLoadingProjects(true);
     setSidebarError(null);
     try {
       const nextProjects = await projectsApi.list();
       setProjects(nextProjects);
-      if (!activeProjectId && nextProjects.length > 0) {
-        const firstProjectId = nextProjects[0].id;
-        setActiveProjectId(firstProjectId);
-        setExpandedProjectIds(openOnlyProject(firstProjectId));
-        void loadDocuments(firstProjectId);
-      }
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to load projects");
     } finally {
       setIsLoadingProjects(false);
+    }
+  }
+
+  async function loadAllConversations() {
+    try {
+      setAllConversations(await conversationsApi.listAll());
+    } catch {
+      // silently ignore
+    }
+  }
+
+  async function loadProjectConversations(projectId: UUID) {
+    try {
+      setProjectConversations(await conversationsApi.listByProject(projectId));
+    } catch {
+      setProjectConversations([]);
     }
   }
 
@@ -112,18 +150,18 @@ export function WorkbenchShell() {
     }
   }
 
+  // ── Project Actions ───────────────────────────────────────
+
   async function handleCreateProject() {
     const name = window.prompt("Project name");
-    if (!name?.trim()) {
-      return;
-    }
-
+    if (!name?.trim()) return;
     try {
       const project = await projectsApi.create({ name: name.trim() });
       setProjects((current) => [project, ...current]);
-      setActiveProjectId(project.id);
+      setSelectedProjectId(project.id);
       setExpandedProjectIds(openOnlyProject(project.id));
       setDocumentsByProject((current) => ({ ...current, [project.id]: [] }));
+      setView("project-detail");
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to create project");
     }
@@ -131,10 +169,7 @@ export function WorkbenchShell() {
 
   async function handleRenameProject(project: Project) {
     const name = window.prompt("New project name", project.name);
-    if (!name?.trim() || name.trim() === project.name) {
-      return;
-    }
-
+    if (!name?.trim() || name.trim() === project.name) return;
     try {
       const updated = await projectsApi.update(project.id, { name: name.trim() });
       setProjects((current) => current.map((item) => (item.id === updated.id ? updated : item)));
@@ -144,10 +179,7 @@ export function WorkbenchShell() {
   }
 
   async function handleDeleteProject(project: Project) {
-    if (!window.confirm(`Delete project "${project.name}"?`)) {
-      return;
-    }
-
+    if (!window.confirm(`Delete project "${project.name}" and all its data?`)) return;
     try {
       await projectsApi.delete(project.id);
       setProjects((current) => current.filter((item) => item.id !== project.id));
@@ -156,8 +188,10 @@ export function WorkbenchShell() {
         delete next[project.id];
         return next;
       });
-      if (activeProjectId === project.id) {
-        setActiveProjectId(null);
+      setAllConversations((current) => current.filter((c) => c.project_id !== project.id));
+      if (selectedProjectId === project.id) {
+        setSelectedProjectId(null);
+        setView("kb-home");
         setMessages([]);
         setConversationId(null);
       }
@@ -166,14 +200,27 @@ export function WorkbenchShell() {
     }
   }
 
-  function handleSelectProject(projectId: UUID) {
-    setActiveProjectId(projectId);
-    setConversationId(null);
+  // ── Sidebar Navigation ────────────────────────────────────
+
+  function handleClickKnowledgeBases() {
+    setView("kb-home");
+    setSelectedProjectId(null);
+    setSelectedConversationId(null);
     setMessages([]);
+    setConversationId(null);
+  }
+
+  function handleSelectProject(projectId: UUID) {
+    setSelectedProjectId(projectId);
+    setSelectedConversationId(null);
+    setMessages([]);
+    setConversationId(null);
+    setView("project-detail");
     setExpandedProjectIds(openOnlyProject(projectId));
     if (!documentsByProject[projectId]) {
       void loadDocuments(projectId);
     }
+    void loadProjectConversations(projectId);
   }
 
   function handleToggleExpand(projectId: UUID) {
@@ -183,23 +230,67 @@ export function WorkbenchShell() {
     }
   }
 
-  async function handleUpload(files: File[]) {
-    if (!activeProjectId || files.length === 0) {
-      return;
+  async function handleSelectConversation(conversation: AllConversation) {
+    setSelectedConversationId(conversation.id);
+    setSelectedProjectId(conversation.project_id);
+    setView("chat");
+    setConversationId(conversation.id);
+    setChatError(null);
+
+    // Load messages for this conversation
+    try {
+      const detail = await conversationsApi.get(conversation.project_id, conversation.id);
+      setMessages(
+        detail.messages.map((m) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          assistantMessageId: m.role === "assistant" ? m.id : undefined
+        }))
+      );
+    } catch {
+      setMessages([]);
     }
 
+    // Preload documents for the project
+    if (!documentsByProject[conversation.project_id]) {
+      void loadDocuments(conversation.project_id);
+    }
+    void loadProjectConversations(conversation.project_id);
+  }
+
+  async function handleDeleteConversation(conversation: AllConversation) {
+    if (!window.confirm("Delete this conversation?")) return;
+    try {
+      await conversationsApi.delete(conversation.project_id, conversation.id);
+      setAllConversations((current) => current.filter((c) => c.id !== conversation.id));
+      setProjectConversations((current) => current.filter((c) => c.id !== conversation.id));
+      if (selectedConversationId === conversation.id) {
+        setSelectedConversationId(null);
+        setMessages([]);
+        setConversationId(null);
+      }
+    } catch {
+      setSidebarError("Unable to delete conversation");
+    }
+  }
+
+  // ── Document Actions ──────────────────────────────────────
+
+  async function handleUpload(files: File[]) {
+    if (!selectedProjectId || files.length === 0) return;
     setIsUploading(true);
     setSidebarError(null);
     try {
-      const uploaded = await Promise.all(files.map((file) => documentsApi.upload(activeProjectId, file)));
+      const uploaded = await Promise.all(files.map((file) => documentsApi.upload(selectedProjectId, file)));
       setDocumentsByProject((current) => ({
         ...current,
-        [activeProjectId]: [
+        [selectedProjectId]: [
           ...uploaded.map((item) => item.document),
-          ...(current[activeProjectId] ?? [])
+          ...(current[selectedProjectId] ?? [])
         ]
       }));
-      setExpandedProjectIds(openOnlyProject(activeProjectId));
+      setExpandedProjectIds(openOnlyProject(selectedProjectId));
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to upload file");
     } finally {
@@ -230,10 +321,7 @@ export function WorkbenchShell() {
   }
 
   async function handleDeleteDocument(projectId: UUID, document: DocumentItem) {
-    if (!window.confirm(`Delete file "${document.filename}"?`)) {
-      return;
-    }
-
+    if (!window.confirm(`Delete file "${document.filename}"?`)) return;
     setBusyDocumentIds((current) => new Set(current).add(document.id));
     setSidebarError(null);
     try {
@@ -253,10 +341,24 @@ export function WorkbenchShell() {
     }
   }
 
+  // ── Chat Actions ──────────────────────────────────────────
+
+  function handleStartChat() {
+    setSelectedConversationId(null);
+    setMessages([]);
+    setConversationId(null);
+    setView("chat");
+  }
+
+  function getChatProjectId(): UUID | null {
+    if (selectedProjectId) return selectedProjectId;
+    if (selectedConversation) return selectedConversation.project_id;
+    return null;
+  }
+
   async function handleSend(message: string) {
-    if (!activeProjectId) {
-      return;
-    }
+    const projectId = getChatProjectId();
+    if (!projectId) return;
 
     const localUserMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -269,7 +371,7 @@ export function WorkbenchShell() {
     setChatError(null);
 
     try {
-      const response = await chatApi.sendMessage(activeProjectId, {
+      const response = await chatApi.sendMessage(projectId, {
         conversation_id: conversationId,
         message,
         retrieval: {
@@ -293,6 +395,12 @@ export function WorkbenchShell() {
           model: response.model
         }
       ]);
+
+      // Refresh conversation lists
+      void loadAllConversations();
+      if (selectedProjectId) {
+        void loadProjectConversations(selectedProjectId);
+      }
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Unable to send message");
     } finally {
@@ -301,51 +409,75 @@ export function WorkbenchShell() {
   }
 
   async function handleFeedback(messageId: UUID, rating: FeedbackRating) {
-    if (!activeProjectId || !conversationId) {
-      return;
-    }
-
-    await feedbackApi.submit(activeProjectId, {
+    const projectId = getChatProjectId();
+    if (!projectId || !conversationId) return;
+    await feedbackApi.submit(projectId, {
       conversation_id: conversationId,
       message_id: messageId,
       rating
     });
   }
 
+  // ── Render ────────────────────────────────────────────────
+
+  // Determine the active project for TopBar context
+  const topBarProject = selectedProject ?? (selectedConversation
+    ? projects.find((p) => p.id === selectedConversation.project_id) ?? null
+    : null);
+
   return (
     <div className="app-shell">
-      <TopBar activeProject={activeProject} systemConfig={systemConfig} />
+      <TopBar activeProject={topBarProject} systemConfig={systemConfig} />
       <div className="workbench-layout">
-        <ProjectSidebar
-          activeProjectId={activeProjectId}
+        <AppSidebar
+          allConversations={allConversations}
           busyDocumentIds={busyDocumentIds}
           documentsByProject={documentsByProject}
           editMode={editMode}
-          error={sidebarError}
           expandedProjectIds={expandedProjectIds}
           isLoadingProjects={isLoadingProjects}
-          isUploading={isUploading}
           loadingDocuments={loadingDocuments}
+          projects={projects}
+          selectedConversationId={selectedConversationId}
+          selectedProjectId={selectedProjectId}
+          onClickKnowledgeBases={handleClickKnowledgeBases}
           onCreateProject={handleCreateProject}
+          onDeleteConversation={handleDeleteConversation}
           onDeleteDocument={handleDeleteDocument}
           onDeleteProject={handleDeleteProject}
-          onRefreshDocuments={handleRefreshDocuments}
           onReindexDocument={handleReindexDocument}
           onRenameProject={handleRenameProject}
+          onSelectConversation={handleSelectConversation}
           onSelectProject={handleSelectProject}
           onToggleEditMode={() => setEditMode((value) => !value)}
           onToggleExpand={handleToggleExpand}
-          onUpload={handleUpload}
-          projects={projects}
         />
-        <ChatWorkspace
-          activeProject={activeProject}
+        <DashboardPanel
           conversationId={conversationId}
+          documents={currentDocuments}
           error={chatError}
           isSending={isSending}
+          isUploading={isUploading}
           messages={messages}
+          onCreateProject={handleCreateProject}
+          onDeleteConversation={handleDeleteConversation}
+          onDeleteDocument={handleDeleteDocument}
+          onDeleteProject={handleDeleteProject}
           onFeedback={handleFeedback}
+          onRefreshDocuments={handleRefreshDocuments}
+          onReindexDocument={handleReindexDocument}
+          onRenameProject={handleRenameProject}
+          onSelectConversation={handleSelectConversation}
+          onSelectProject={handleSelectProject}
           onSend={handleSend}
+          onStartChat={handleStartChat}
+          onUpload={handleUpload}
+          onUploadToProject={(files) => { void handleUpload(files); }}
+          projectConversations={projectConversations}
+          projects={projects}
+          selectedConversation={selectedConversation}
+          selectedProject={selectedProject}
+          view={view}
         />
       </div>
     </div>

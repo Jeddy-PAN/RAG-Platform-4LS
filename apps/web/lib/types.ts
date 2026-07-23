@@ -213,6 +213,34 @@ export type EvalRunSummary = Omit<EvalRun, "results"> & {
   result_count: number;
 };
 
+export type AllConversation = {
+  id: UUID;
+  project_id: UUID;
+  project_name: string;
+  title: string | null;
+  updated_at: string;
+};
+
+export type ConversationDetail = {
+  id: UUID;
+  project_id: UUID;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  messages: MessageItem[];
+};
+
+export type MessageItem = {
+  id: UUID;
+  project_id: UUID;
+  conversation_id: UUID;
+  role: "user" | "assistant" | "system";
+  content: string;
+  message_metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type SystemConfig = {
   llm: {
     provider: string;
