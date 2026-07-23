@@ -1,12 +1,11 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.chunk import Chunk
-from app.models.document import Document, DocumentSection, DocumentStatus, IngestionJob
+from app.models.document import Document, DocumentStatus, IngestionJob
 from app.models.project import Project
 from app.schemas.document import DocumentUploadRead
 from app.services.ingestion_jobs import create_ingestion_job, mark_ingestion_job_failed
@@ -147,22 +146,10 @@ def delete_project_document(
     project_id: uuid.UUID,
     document_id: uuid.UUID,
 ) -> None:
-    """Delete one project-scoped document and its stored source file.
-
-    Chunks are soft-deleted (is_active=False) so that existing message
-    citations remain intact even after the source document is removed.
-    """
+    """Delete one project-scoped document and its stored source file."""
 
     document = get_project_document(db, project_id, document_id)
     storage_path = document.storage_path
-
-    db.execute(
-        update(Chunk)
-        .where(Chunk.document_id == document_id)
-        .values(is_active=False)
-    )
-    db.execute(delete(DocumentSection).where(DocumentSection.document_id == document_id))
-    db.execute(delete(IngestionJob).where(IngestionJob.document_id == document_id))
     db.delete(document)
     db.commit()
     delete_stored_file(storage_path)
