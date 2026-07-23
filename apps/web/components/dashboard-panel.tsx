@@ -166,6 +166,21 @@ export function DashboardPanel({
           </div>
 
           <section className="detail-section">
+            <h3>Tools</h3>
+            <div style={{ display: "flex", gap: 10 }}>
+              <a href="/retrieval" className="btn">
+                🔍 Retrieval Playground
+              </a>
+              <a href="/eval" className="btn">
+                📊 Evaluation
+              </a>
+              <a href="/metrics" className="btn">
+                📈 Metrics
+              </a>
+            </div>
+          </section>
+
+          <section className="detail-section">
             <h3>Files ({documents.length})</h3>
             <SidebarUploadZone disabled={false} isUploading={isUploading} onUpload={onUploadToProject} />
             {documents.length === 0 ? (

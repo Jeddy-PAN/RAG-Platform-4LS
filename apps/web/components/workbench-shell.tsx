@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { chatApi, conversationsApi, documentsApi, feedbackApi, projectsApi, systemApi } from "@/lib/api";
-import { getNextExpandedProjectIds, openOnlyProject } from "@/lib/project-expansion";
 import type {
   AllConversation,
   ChatMessage,
@@ -27,10 +26,8 @@ function hasPendingDocuments(documents: DocumentItem[] | undefined): boolean {
 export function WorkbenchShell() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [documentsByProject, setDocumentsByProject] = useState<Record<UUID, DocumentItem[]>>({});
-  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<UUID>>(new Set());
   const [loadingDocuments, setLoadingDocuments] = useState<Set<UUID>>(new Set());
   const [busyDocumentIds, setBusyDocumentIds] = useState<Set<UUID>>(new Set());
-  const [editMode, setEditMode] = useState(false);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -75,21 +72,19 @@ export function WorkbenchShell() {
     void loadSystemConfig();
   }, []);
 
-  // Poll for document status changes
+  // Poll for document status changes on the selected project
   useEffect(() => {
-    const projectIdsToPoll = [...expandedProjectIds].filter((id) =>
-      hasPendingDocuments(documentsByProject[id])
-    );
-    if (projectIdsToPoll.length === 0) return;
+    if (!selectedProjectId) return;
+    if (!hasPendingDocuments(documentsByProject[selectedProjectId])) return;
 
     const intervalId = window.setInterval(() => {
-      for (const projectId of projectIdsToPoll) {
-        void loadDocuments(projectId, { silent: true });
+      if (selectedProjectId) {
+        void loadDocuments(selectedProjectId, { silent: true });
       }
     }, DOCUMENT_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [documentsByProject, expandedProjectIds]);
+  }, [documentsByProject, selectedProjectId]);
 
   // ── Data Loaders ──────────────────────────────────────────
 
@@ -159,7 +154,7 @@ export function WorkbenchShell() {
       const project = await projectsApi.create({ name: name.trim() });
       setProjects((current) => [project, ...current]);
       setSelectedProjectId(project.id);
-      setExpandedProjectIds(openOnlyProject(project.id));
+
       setDocumentsByProject((current) => ({ ...current, [project.id]: [] }));
       setView("project-detail");
     } catch (error) {
@@ -216,18 +211,11 @@ export function WorkbenchShell() {
     setMessages([]);
     setConversationId(null);
     setView("project-detail");
-    setExpandedProjectIds(openOnlyProject(projectId));
+
     if (!documentsByProject[projectId]) {
       void loadDocuments(projectId);
     }
     void loadProjectConversations(projectId);
-  }
-
-  function handleToggleExpand(projectId: UUID) {
-    setExpandedProjectIds((current) => getNextExpandedProjectIds(current, projectId));
-    if (!expandedProjectIds.has(projectId) && !documentsByProject[projectId]) {
-      void loadDocuments(projectId);
-    }
   }
 
   async function handleSelectConversation(conversation: AllConversation) {
@@ -290,7 +278,7 @@ export function WorkbenchShell() {
           ...(current[selectedProjectId] ?? [])
         ]
       }));
-      setExpandedProjectIds(openOnlyProject(selectedProjectId));
+
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to upload file");
     } finally {
@@ -308,7 +296,7 @@ export function WorkbenchShell() {
     try {
       await documentsApi.reindex(projectId, document.id);
       await loadDocuments(projectId);
-      setExpandedProjectIds(openOnlyProject(projectId));
+
     } catch (error) {
       setSidebarError(error instanceof Error ? error.message : "Unable to reindex document");
     } finally {
@@ -431,26 +419,14 @@ export function WorkbenchShell() {
       <div className="workbench-layout">
         <AppSidebar
           allConversations={allConversations}
-          busyDocumentIds={busyDocumentIds}
-          documentsByProject={documentsByProject}
-          editMode={editMode}
-          expandedProjectIds={expandedProjectIds}
           isLoadingProjects={isLoadingProjects}
-          loadingDocuments={loadingDocuments}
           projects={projects}
           selectedConversationId={selectedConversationId}
           selectedProjectId={selectedProjectId}
           onClickKnowledgeBases={handleClickKnowledgeBases}
-          onCreateProject={handleCreateProject}
           onDeleteConversation={handleDeleteConversation}
-          onDeleteDocument={handleDeleteDocument}
-          onDeleteProject={handleDeleteProject}
-          onReindexDocument={handleReindexDocument}
-          onRenameProject={handleRenameProject}
           onSelectConversation={handleSelectConversation}
           onSelectProject={handleSelectProject}
-          onToggleEditMode={() => setEditMode((value) => !value)}
-          onToggleExpand={handleToggleExpand}
         />
         <DashboardPanel
           conversationId={conversationId}

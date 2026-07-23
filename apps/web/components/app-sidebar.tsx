@@ -1,101 +1,62 @@
 "use client";
 
-import type { AllConversation, DocumentItem, Project, UUID } from "@/lib/types";
-import { ProjectList } from "./project-list";
+import { useState } from "react";
+import type { AllConversation, Project, UUID } from "@/lib/types";
 
 type AppSidebarProps = {
   projects: Project[];
   allConversations: AllConversation[];
-  documentsByProject: Record<UUID, DocumentItem[]>;
   selectedProjectId: UUID | null;
   selectedConversationId: UUID | null;
-  busyDocumentIds: Set<UUID>;
-  expandedProjectIds: Set<UUID>;
-  editMode: boolean;
   isLoadingProjects: boolean;
-  loadingDocuments: Set<UUID>;
   onSelectProject: (projectId: UUID) => void;
-  onToggleExpand: (projectId: UUID) => void;
   onSelectConversation: (conversation: AllConversation) => void;
   onDeleteConversation: (conversation: AllConversation) => void;
-  onCreateProject: () => void;
-  onToggleEditMode: () => void;
-  onRenameProject: (project: Project) => void;
-  onDeleteProject: (project: Project) => void;
-  onDeleteDocument: (projectId: UUID, document: DocumentItem) => void;
-  onReindexDocument: (projectId: UUID, document: DocumentItem) => void;
   onClickKnowledgeBases: () => void;
 };
 
 export function AppSidebar({
   projects,
   allConversations,
-  documentsByProject,
   selectedProjectId,
   selectedConversationId,
-  busyDocumentIds,
-  expandedProjectIds,
-  editMode,
   isLoadingProjects,
-  loadingDocuments,
   onSelectProject,
-  onToggleExpand,
   onSelectConversation,
   onDeleteConversation,
-  onCreateProject,
-  onToggleEditMode,
-  onRenameProject,
-  onDeleteProject,
-  onDeleteDocument,
-  onReindexDocument,
   onClickKnowledgeBases
 }: AppSidebarProps) {
+  const [kbExpanded, setKbExpanded] = useState(true);
+
   return (
     <aside className="app-sidebar">
       <section className="sidebar-section">
         <div
           className="sidebar-section-header"
-          onClick={onClickKnowledgeBases}
+          onClick={() => setKbExpanded((v) => !v)}
         >
           <span>Knowledge Bases</span>
           <span className="count">{projects.length}</span>
         </div>
-        <div className="sidebar-section-body">
-          <div className="sidebar-heading">
-            <div>
-              <span className="sidebar-label">Projects</span>
-            </div>
-            <div className="sidebar-actions">
-              <button aria-label="Add project" className="icon-button" onClick={onCreateProject} type="button">
-                +
-              </button>
-              <button
-                aria-label="Toggle project edit mode"
-                className={`icon-button ${editMode ? "active" : ""}`}
-                onClick={onToggleEditMode}
-                type="button"
-              >
-                Edit
-              </button>
-            </div>
+        {kbExpanded ? (
+          <div className="sidebar-section-body">
+            {isLoadingProjects ? (
+              <p className="sidebar-empty">Loading...</p>
+            ) : projects.length === 0 ? (
+              <p className="sidebar-empty">No projects yet</p>
+            ) : (
+              projects.map((project) => (
+                <div
+                  key={project.id}
+                  className={`chat-sidebar-item ${selectedProjectId === project.id ? "selected" : ""}`}
+                  onClick={() => onSelectProject(project.id)}
+                >
+                  <span className="title">{project.name}</span>
+                </div>
+              ))
+            )}
           </div>
-          <ProjectList
-            activeProjectId={selectedProjectId}
-            busyDocumentIds={busyDocumentIds}
-            documentsByProject={documentsByProject}
-            editMode={editMode}
-            expandedProjectIds={expandedProjectIds}
-            loading={isLoadingProjects}
-            loadingDocuments={loadingDocuments}
-            onDeleteDocument={onDeleteDocument}
-            onReindexDocument={onReindexDocument}
-            onDeleteProject={onDeleteProject}
-            onRenameProject={onRenameProject}
-            onSelectProject={onSelectProject}
-            onToggleExpand={onToggleExpand}
-            projects={projects}
-          />
-        </div>
+        ) : null}
       </section>
 
       <section className="sidebar-section">
