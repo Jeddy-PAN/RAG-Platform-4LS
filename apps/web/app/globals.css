@@ -1612,32 +1612,38 @@ h1 {
 .sidebar-section-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 10px 14px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
+  justify-content: space-between;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
   cursor: pointer;
   user-select: none;
-  transition: color 0.15s;
-}
-
-.sidebar-section-header .arrow {
-  font-size: 10px;
-  width: 12px;
-  flex-shrink: 0;
+  transition: background 0.15s;
 }
 
 .sidebar-section-header:hover {
-  color: var(--foreground);
+  background: var(--accent-soft);
+}
+
+.sidebar-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chevron-icon {
+  flex-shrink: 0;
+  color: var(--muted);
 }
 
 .sidebar-section-header .count {
   font-size: 11px;
+  font-weight: 500;
   color: var(--muted);
-  margin-left: auto;
+  background: var(--background);
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 
 .sidebar-section-body {
@@ -1846,6 +1852,19 @@ h1 {
   color: var(--muted-strong);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s;
+}
+
+.collapsible-header:hover {
+  color: var(--accent);
 }
 
 /* file list in project detail */

@@ -197,14 +197,6 @@ export function WorkbenchShell() {
 
   // ── Sidebar Navigation ────────────────────────────────────
 
-  function handleClickKnowledgeBases() {
-    setView("kb-home");
-    setSelectedProjectId(null);
-    setSelectedConversationId(null);
-    setMessages([]);
-    setConversationId(null);
-  }
-
   function handleSelectProject(projectId: UUID) {
     setSelectedProjectId(projectId);
     setSelectedConversationId(null);
@@ -423,7 +415,6 @@ export function WorkbenchShell() {
           projects={projects}
           selectedConversationId={selectedConversationId}
           selectedProjectId={selectedProjectId}
-          onClickKnowledgeBases={handleClickKnowledgeBases}
           onDeleteConversation={handleDeleteConversation}
           onSelectConversation={handleSelectConversation}
           onSelectProject={handleSelectProject}

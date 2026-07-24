@@ -3,6 +3,21 @@
 import { useState } from "react";
 import type { AllConversation, Project, UUID } from "@/lib/types";
 
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className="chevron-icon"
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}
+    >
+      <path d="M5 3L9 7L5 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 type AppSidebarProps = {
   projects: Project[];
   allConversations: AllConversation[];
@@ -12,7 +27,6 @@ type AppSidebarProps = {
   onSelectProject: (projectId: UUID) => void;
   onSelectConversation: (conversation: AllConversation) => void;
   onDeleteConversation: (conversation: AllConversation) => void;
-  onClickKnowledgeBases: () => void;
 };
 
 export function AppSidebar({
@@ -23,8 +37,7 @@ export function AppSidebar({
   isLoadingProjects,
   onSelectProject,
   onSelectConversation,
-  onDeleteConversation,
-  onClickKnowledgeBases
+  onDeleteConversation
 }: AppSidebarProps) {
   const [kbExpanded, setKbExpanded] = useState(false);
   const [chatsExpanded, setChatsExpanded] = useState(false);
@@ -32,16 +45,11 @@ export function AppSidebar({
   return (
     <aside className="app-sidebar">
       <section className="sidebar-section">
-        <div className="sidebar-section-header">
-          <span
-            className="arrow"
-            onClick={(e) => { e.stopPropagation(); setKbExpanded((v) => !v); }}
-          >
-            {kbExpanded ? "▾" : "▸"}
-          </span>
-          <span style={{ flex: 1, cursor: "pointer" }} onClick={onClickKnowledgeBases}>
-            Knowledge Bases
-          </span>
+        <div className="sidebar-section-header" onClick={() => setKbExpanded((v) => !v)}>
+          <div className="sidebar-section-label">
+            <ChevronIcon expanded={kbExpanded} />
+            <span>Knowledge Bases</span>
+          </div>
           <span className="count">{projects.length}</span>
         </div>
         {kbExpanded ? (
@@ -70,8 +78,10 @@ export function AppSidebar({
           className="sidebar-section-header"
           onClick={() => setChatsExpanded((v) => !v)}
         >
-          <span className="arrow">{chatsExpanded ? "▾" : "▸"}</span>
-          <span>Chats</span>
+          <div className="sidebar-section-label">
+            <ChevronIcon expanded={chatsExpanded} />
+            <span>Chats</span>
+          </div>
           <span className="count">{allConversations.length}</span>
         </div>
         {chatsExpanded ? (

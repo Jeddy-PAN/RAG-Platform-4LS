@@ -84,7 +84,7 @@ export function DashboardPanel({
   onFeedback,
   onUploadToProject
 }: DashboardPanelProps) {
-  const [composerMessage, setComposerMessage] = useState("");
+  const [filesExpanded, setFilesExpanded] = useState(false);
 
   if (view === "kb-home") {
     return (
@@ -190,51 +190,61 @@ export function DashboardPanel({
           </section>
 
           <section className="detail-section">
-            <h3>Files ({documents.length})</h3>
-            <SidebarUploadZone disabled={false} isUploading={isUploading} onUpload={onUploadToProject} />
-            {documents.length === 0 ? (
-              <p className="sidebar-empty">No files uploaded</p>
-            ) : (
-              <table className="file-list-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Status</th>
-                    <th>Size</th>
-                    <th style={{ textAlign: "right" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {documents.map((doc) => (
-                    <tr key={doc.id}>
-                      <td>{doc.filename}</td>
-                      <td><StatusBadge status={doc.status} /></td>
-                      <td style={{ color: "var(--muted)", fontSize: 12 }}>
-                        {doc.file_size_bytes > 0 ? `${(doc.file_size_bytes / 1024).toFixed(0)} KB` : "—"}
-                      </td>
-                      <td style={{ textAlign: "right" }}>
-                        <button
-                          className="db-btn db-btn-sm"
-                          onClick={() => onReindexDocument(selectedProject.id, doc)}
-                          disabled={doc.status !== "indexed"}
-                          type="button"
-                        >
-                          Reindex
-                        </button>
-                        <button
-                          className="db-btn db-btn-sm db-btn-danger"
-                          onClick={() => onDeleteDocument(selectedProject.id, doc)}
-                          style={{ marginLeft: 6 }}
-                          type="button"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <h3
+              className="collapsible-header"
+              onClick={() => setFilesExpanded((v) => !v)}
+            >
+              <span>{filesExpanded ? "▾" : "▸"}</span>
+              Files ({documents.length})
+            </h3>
+            {filesExpanded ? (
+              <>
+                <SidebarUploadZone disabled={false} isUploading={isUploading} onUpload={onUploadToProject} />
+                {documents.length === 0 ? (
+                  <p className="sidebar-empty">No files uploaded</p>
+                ) : (
+                  <table className="file-list-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Size</th>
+                        <th style={{ textAlign: "right" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {documents.map((doc) => (
+                        <tr key={doc.id}>
+                          <td>{doc.filename}</td>
+                          <td><StatusBadge status={doc.status} /></td>
+                          <td style={{ color: "var(--muted)", fontSize: 12 }}>
+                            {doc.file_size_bytes > 0 ? `${(doc.file_size_bytes / 1024).toFixed(0)} KB` : "—"}
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <button
+                              className="db-btn db-btn-sm"
+                              onClick={() => onReindexDocument(selectedProject.id, doc)}
+                              disabled={doc.status !== "indexed"}
+                              type="button"
+                            >
+                              Reindex
+                            </button>
+                            <button
+                              className="db-btn db-btn-sm db-btn-danger"
+                              onClick={() => onDeleteDocument(selectedProject.id, doc)}
+                              style={{ marginLeft: 6 }}
+                              type="button"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            ) : null}
           </section>
 
           <section className="detail-section">
