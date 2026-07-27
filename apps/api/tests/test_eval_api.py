@@ -1,7 +1,7 @@
 from app.models.eval import EvalDataset, EvalQuestion, EvalResult, EvalRunStatus
 from app.models.retrieval import RetrievalLog
 import app.services.eval as eval_service
-from app.services.eval import _answer_matches
+from app.services.eval_scoring import answer_matches
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
 
@@ -611,15 +611,15 @@ def test_answer_matching_handles_multilingual_eval_notes() -> None:
         "它不是 DeepSeek、Ollama 或 embedding 质量导致的。"
     )
 
-    assert _answer_matches(
+    assert answer_matches(
         sycamore_answer,
         "Sycamore; 2019 quantum supremacy; not break encryption",
     )
-    assert _answer_matches(
+    assert answer_matches(
         lantern_answer,
         "Lantern cryptographic agility; Atlas data indexing",
     )
-    assert _answer_matches(
+    assert answer_matches(
         support_answer,
         "API reachability; /health; not DeepSeek Ollama embedding",
     )
@@ -648,19 +648,19 @@ def test_answer_matching_handles_real_chinese_eval_answers() -> None:
         "IBM Heron 则被描述为一种模块化架构，专门与模块化扩展计划绑定。"
     )
 
-    assert _answer_matches(
+    assert answer_matches(
         sycamore_answer,
         "Sycamore; 2019 quantum supremacy; not break encryption",
     )
-    assert _answer_matches(
+    assert answer_matches(
         lantern_answer,
         "Lantern cryptographic agility; Atlas data indexing",
     )
-    assert _answer_matches(
+    assert answer_matches(
         support_answer,
         "API reachability; /health; not DeepSeek Ollama embedding",
     )
-    assert _answer_matches(
+    assert answer_matches(
         ibm_answer,
         "Osprey 433-qubit processor; Heron modular scale-out",
     )
