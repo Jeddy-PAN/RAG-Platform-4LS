@@ -2,22 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { documentsApi, evalApi, projectsApi, retrievalApi } from "@/lib/api";
-import {
-  buildEvalCompareCsv,
-  buildEvalRunCsv,
-  buildEvalRunJson,
-  buildExportFilename
-} from "@/lib/eval-export";
-import {
-  buildEvalRunCompare,
-  type EvalRunCompareCell
-} from "@/lib/eval-run-compare";
+import { buildEvalRunCsv, buildEvalRunJson, buildExportFilename } from "@/lib/eval-export";
 import {
   buildEvalResultFilterOptions,
   filterEvalResults,
   type EvalResultFilter
 } from "@/lib/eval-result-filters";
-import { shortId } from "@/lib/format";
 import type {
   DocumentItem,
   EvalDataset,
@@ -29,61 +19,14 @@ import type {
   RetrievalMode,
   UUID
 } from "@/lib/types";
+import { downloadTextFile } from "./eval-helpers";
+import { EvalComparePanel } from "./eval-compare-panel";
+import { EvalModals, type EvalModalType } from "./eval-modals";
+import { EvalRunDetail } from "./eval-run-detail";
+import { EvalRunHistory } from "./eval-run-history";
+import { useEvalCompare } from "./use-eval-compare";
 
 type EvalPanelView = "questions" | "history";
-
-function formatRate(value: number | undefined) {
-  if (typeof value !== "number") {
-    return "0%";
-  }
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatLatency(value: number | null | undefined) {
-  if (typeof value !== "number") {
-    return "0 ms";
-  }
-  return `${Math.round(value)} ms`;
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
-function formatCellOutcome(cell: EvalRunCompareCell) {
-  if (!cell.resultId) {
-    return "Missing";
-  }
-  if (cell.refused) {
-    return "Refused";
-  }
-  return cell.answerMatched ? "Pass" : "Fail";
-}
-
-function getCellClassName(cell: EvalRunCompareCell) {
-  if (!cell.resultId) {
-    return "eval-compare-cell missing";
-  }
-  if (cell.refused) {
-    return "eval-compare-cell refused";
-  }
-  return cell.answerMatched ? "eval-compare-cell pass" : "eval-compare-cell fail";
-}
-
-function downloadTextFile(filename: string, content: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
 
 export function EvalWorkspace() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -104,9 +47,6 @@ export function EvalWorkspace() {
   const [judgeEnabled, setJudgeEnabled] = useState(false);
   const [runs, setRuns] = useState<EvalRunSummary[]>([]);
   const [run, setRun] = useState<EvalRun | null>(null);
-  const [compareRunIds, setCompareRunIds] = useState<UUID[]>([]);
-  const [compareRunsById, setCompareRunsById] = useState<Record<UUID, EvalRun>>({});
-  const [loadingCompareRunIds, setLoadingCompareRunIds] = useState<Set<UUID>>(new Set());
   const [resultFilter, setResultFilter] = useState<EvalResultFilter>("all");
   const [selectedRetrievalLog, setSelectedRetrievalLog] = useState<RetrievalLog | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -114,7 +54,7 @@ export function EvalWorkspace() {
   const [isLoadingRetrievalLog, setIsLoadingRetrievalLog] = useState(false);
   const [evalEditMode, setEvalEditMode] = useState(false);
   const [busyEvalIds, setBusyEvalIds] = useState<Set<UUID>>(new Set());
-  const [modal, setModal] = useState<"dataset" | "question" | "run" | null>(null);
+  const [modal, setModal] = useState<EvalModalType>(null);
   const [panelView, setPanelView] = useState<EvalPanelView>("questions");
   const [error, setError] = useState<string | null>(null);
 
@@ -160,45 +100,11 @@ export function EvalWorkspace() {
     return latencies.reduce((total, value) => total + value, 0) / latencies.length;
   }, [run?.results]);
 
-  const compareRuns = useMemo(
-    () =>
-      compareRunIds
-        .map((runId) => (run?.id === runId ? run : compareRunsById[runId]))
-        .filter((item): item is EvalRun => Boolean(item)),
-    [compareRunIds, compareRunsById, run]
-  );
-
-  const compare = useMemo(() => buildEvalRunCompare(compareRuns), [compareRuns]);
-
-  const compareMetricRows = useMemo(
-    () => [
-      {
-        label: "Hit rate",
-        values: compare.runs.map((item) => formatRate(item.hitRate))
-      },
-      {
-        label: "Citation",
-        values: compare.runs.map((item) => formatRate(item.citationCoverageRate))
-      },
-      {
-        label: "Answer match",
-        values: compare.runs.map((item) => formatRate(item.answerMatchRate))
-      },
-      {
-        label: "Judge",
-        values: compare.runs.map((item) => formatRate(item.judgeMatchRate))
-      },
-      {
-        label: "Avg retrieval",
-        values: compare.runs.map((item) => formatLatency(item.avgRetrievalLatencyMs))
-      },
-      {
-        label: "Avg generation",
-        values: compare.runs.map((item) => formatLatency(item.avgGenerationLatencyMs))
-      }
-    ],
-    [compare.runs]
-  );
+  const {
+    compareRunIds, loadingCompareRunIds,
+    compare, compareMetricRows,
+    resetCompareState, addRunToCompare, toggleCompareRun, exportCompareCsv,
+  } = useEvalCompare(selectedProjectId, selectedDatasetId, run, setError);
 
   useEffect(() => {
     if (!error) {
@@ -315,48 +221,6 @@ export function EvalWorkspace() {
     setQuestions(questionList);
   }
 
-  function resetCompareState() {
-    setCompareRunIds([]);
-    setCompareRunsById({});
-    setLoadingCompareRunIds(new Set());
-  }
-
-  async function ensureCompareRunDetail(runId: UUID) {
-    if (!selectedProjectId || !selectedDatasetId || run?.id === runId || compareRunsById[runId]) {
-      return;
-    }
-
-    setLoadingCompareRunIds((current) => new Set(current).add(runId));
-    setError(null);
-    try {
-      const result = await evalApi.getRun(selectedProjectId, selectedDatasetId, runId);
-      setCompareRunsById((current) => ({ ...current, [runId]: result }));
-    } catch (loadError) {
-      setCompareRunIds((current) => current.filter((id) => id !== runId));
-      setError(loadError instanceof Error ? loadError.message : "Unable to load compare run");
-    } finally {
-      setLoadingCompareRunIds((current) => {
-        const next = new Set(current);
-        next.delete(runId);
-        return next;
-      });
-    }
-  }
-
-  function toggleCompareRun(runId: UUID) {
-    if (compareRunIds.includes(runId)) {
-      setCompareRunIds((current) => current.filter((id) => id !== runId));
-      return;
-    }
-
-    if (compareRunIds.length >= 4) {
-      return;
-    }
-
-    setCompareRunIds((current) => [...current, runId]);
-    void ensureCompareRunDetail(runId);
-  }
-
   function exportRunCsv(currentRun: EvalRun) {
     downloadTextFile(
       buildExportFilename("eval run", currentRun.id, "csv"),
@@ -370,14 +234,6 @@ export function EvalWorkspace() {
       buildExportFilename("eval run", currentRun.id, "json"),
       JSON.stringify(buildEvalRunJson(currentRun), null, 2),
       "application/json;charset=utf-8"
-    );
-  }
-
-  function exportCompareCsv() {
-    downloadTextFile(
-      buildExportFilename("eval compare", compare.runs.map((item) => item.id).join("-"), "csv"),
-      buildEvalCompareCsv(compare),
-      "text/csv;charset=utf-8"
     );
   }
 
@@ -444,7 +300,7 @@ export function EvalWorkspace() {
         judge_enabled: judgeEnabled
       });
       setRun(result);
-      setCompareRunsById((current) => ({ ...current, [result.id]: result }));
+      addRunToCompare(result);
       setSelectedRetrievalLog(null);
       setResultFilter("all");
       await refreshRuns(selectedProjectId, selectedDatasetId);
@@ -466,7 +322,7 @@ export function EvalWorkspace() {
     try {
       const result = await evalApi.getRun(selectedProjectId, selectedDatasetId, runId);
       setRun(result);
-      setCompareRunsById((current) => ({ ...current, [result.id]: result }));
+      addRunToCompare(result);
       setSelectedRetrievalLog(null);
       setResultFilter("all");
     } catch (loadError) {
@@ -737,48 +593,15 @@ export function EvalWorkspace() {
                   <strong>History</strong>
                   <span>{runs.length}</span>
                 </div>
-                {runs.length > 0 ? (
-                  <div className="eval-run-list compact">
-                    {runs.map((item) => {
-                      const isCompareSelected = compareRunIds.includes(item.id);
-                      const isCompareDisabled = !isCompareSelected && compareRunIds.length >= 4;
-                      const isCompareLoading = loadingCompareRunIds.has(item.id);
-
-                      return (
-                        <div
-                          className={run?.id === item.id ? "eval-run-row active" : "eval-run-row"}
-                          key={item.id}
-                        >
-                          <button
-                            className="eval-run-open"
-                            disabled={isLoadingRun}
-                            onClick={() => loadRunDetail(item.id)}
-                            type="button"
-                          >
-                            <span>
-                              {item.retrieval_mode} · top {item.top_k}
-                            </span>
-                            <strong>{formatRate(item.metrics.answer_match_rate)}</strong>
-                            <small>
-                              {item.status} · {item.result_count} results
-                            </small>
-                          </button>
-                          <button
-                            aria-label={`${isCompareSelected ? "Remove from" : "Add to"} compare`}
-                            className={isCompareSelected ? "mini-button active" : "mini-button"}
-                            disabled={isCompareDisabled || isCompareLoading}
-                            onClick={() => toggleCompareRun(item.id)}
-                            type="button"
-                          >
-                            {isCompareLoading ? "..." : isCompareSelected ? "Added" : "+"}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="sidebar-empty">No runs for this dataset.</p>
-                )}
+                <EvalRunHistory
+                  runs={runs}
+                  selectedRun={run}
+                  compareRunIds={compareRunIds}
+                  loadingCompareRunIds={loadingCompareRunIds}
+                  isLoadingRun={isLoadingRun}
+                  loadRunDetail={loadRunDetail}
+                  toggleCompareRun={toggleCompareRun}
+                />
               </div>
             )}
             <div className="retrieval-query-actions">
@@ -796,408 +619,58 @@ export function EvalWorkspace() {
               </button>
             </div>
           </section>
-          {compareRunIds.length > 0 ? (
-            <section className="eval-compare-panel">
-              <div className="eval-compare-heading">
-                <div>
-                  <span className="sidebar-label">Run compare</span>
-                  <strong>
-                    {compare.runs.length}/{compareRunIds.length} loaded
-                  </strong>
-                </div>
-                <div className="eval-export-actions">
-                  <button
-                    className="mini-button"
-                    disabled={compare.runs.length < 2}
-                    onClick={exportCompareCsv}
-                    type="button"
-                  >
-                    Export CSV
-                  </button>
-                  <button className="mini-button" onClick={resetCompareState} type="button">
-                    Clear
-                  </button>
-                </div>
-              </div>
-              {compare.runs.length < 2 ? (
-                <p className="sidebar-empty">Select at least 2 runs to compare metrics and questions.</p>
-              ) : (
-                <>
-                  <div className="eval-compare-scroll">
-                    <table className="eval-compare-table">
-                      <thead>
-                        <tr>
-                          <th>Metric</th>
-                          {compare.runs.map((item) => (
-                            <th key={item.id}>
-                              <span>{item.label}</span>
-                              <small>
-                                {formatDateTime(item.createdAt)} · {item.resultCount} results
-                              </small>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {compareMetricRows.map((row) => (
-                          <tr key={row.label}>
-                            <td>{row.label}</td>
-                            {row.values.map((value, index) => (
-                              <td key={`${row.label}-${compare.runs[index]?.id ?? index}`}>
-                                {value}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="eval-compare-scroll">
-                    <table className="eval-compare-table question-matrix">
-                      <thead>
-                        <tr>
-                          <th>Question</th>
-                          {compare.runs.map((item) => (
-                            <th key={item.id}>{item.label}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {compare.questions.map((questionItem) => (
-                          <tr key={questionItem.questionId}>
-                            <td>{questionItem.question}</td>
-                            {questionItem.cells.map((cell) => (
-                              <td key={`${questionItem.questionId}-${cell.runId}`}>
-                                <span className={getCellClassName(cell)}>
-                                  {formatCellOutcome(cell)}
-                                </span>
-                                <small>
-                                  score {cell.score ?? "n/a"} · hit {String(cell.hit ?? false)} ·
-                                  citation {String(cell.citationCovered ?? false)}
-                                </small>
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </section>
-          ) : null}
+          <EvalComparePanel
+            compare={compare}
+            compareMetricRows={compareMetricRows}
+            loadedCount={compare.runs.length}
+            totalCount={compareRunIds.length}
+            exportCompareCsv={exportCompareCsv}
+            resetCompareState={resetCompareState}
+          />
           {!run ? (
             <section className="retrieval-empty">
               Select a previous run or create a dataset, add questions, then run eval.
             </section>
           ) : (
-            <section className="retrieval-results">
-              <div className="eval-run-toolbar">
-                <div>
-                  <span className="sidebar-label">Run detail</span>
-                  <strong>
-                    {run.retrieval_mode} · top {run.top_k}
-                  </strong>
-                </div>
-                <div className="eval-export-actions">
-                  <button className="mini-button" onClick={() => exportRunCsv(run)} type="button">
-                    Export CSV
-                  </button>
-                  <button className="mini-button" onClick={() => exportRunJson(run)} type="button">
-                    Export JSON
-                  </button>
-                </div>
-              </div>
-              <div className="eval-metrics">
-                <div>
-                  <span>Hit rate</span>
-                  <strong>{formatRate(run.metrics.hit_rate)}</strong>
-                </div>
-                <div>
-                  <span>Citation</span>
-                  <strong>{formatRate(run.metrics.citation_coverage_rate)}</strong>
-                </div>
-                <div>
-                  <span>Answer match</span>
-                  <strong>{formatRate(run.metrics.answer_match_rate)}</strong>
-                </div>
-                <div>
-                  <span>Judge</span>
-                  <strong>{formatRate(run.metrics.judge_match_rate)}</strong>
-                </div>
-                <div>
-                  <span>Avg retrieval</span>
-                  <strong>{formatLatency(run.metrics.avg_retrieval_latency_ms)}</strong>
-                </div>
-                <div>
-                  <span>Avg generation</span>
-                  <strong>{formatLatency(avgGenerationLatency)}</strong>
-                </div>
-              </div>
-              <div className="eval-result-filters">
-                {resultFilterOptions.map((option) => (
-                  <button
-                    className={option.id === resultFilter ? "active" : ""}
-                    key={option.id}
-                    onClick={() => setResultFilter(option.id)}
-                    type="button"
-                  >
-                    <span>{option.label}</span>
-                    <strong>{option.count}</strong>
-                  </button>
-                ))}
-              </div>
-              <ol>
-                {filteredResults.length === 0 ? (
-                  <li>
-                    <p>No results match this filter.</p>
-                  </li>
-                ) : (
-                  filteredResults.map((result) => {
-                    const expectedQuestion = questionsById.get(result.question_id);
-                    const expectedDocumentName = expectedQuestion?.expected_document_id
-                      ? documentNamesById.get(expectedQuestion.expected_document_id) ??
-                        expectedQuestion.expected_document_id
-                      : null;
-                    const retrievedCount = result.result_metadata.retrieved_chunk_ids?.length ?? 0;
-                    const citationCount = result.result_metadata.citation_chunk_ids?.length ?? 0;
-
-                    return (
-                      <li key={result.id}>
-                        <div className="result-heading">
-                          <strong>{result.question}</strong>
-                          <span>score {result.score ?? 0}</span>
-                        </div>
-                        <p>{result.answer ?? "No answer returned."}</p>
-                        <div className="score-row">
-                          hit {String(result.hit)} · citation {String(result.citation_covered)} ·
-                          answer {String(result.answer_matched)} · refused {String(result.refused)}
-                          {expectedDocumentName ? ` · expected ${expectedDocumentName}` : ""}
-                        </div>
-                        <div className="score-row">
-                          retrieval {formatLatency(result.retrieval_latency_ms)} · generation{" "}
-                          {formatLatency(result.generation_latency_ms)} · retrieved {retrievedCount} ·
-                          cited {citationCount}
-                          {result.result_metadata.retrieval_log_id
-                            ? ` · log ${shortId(result.result_metadata.retrieval_log_id)}`
-                            : ""}
-                        </div>
-                        {result.result_metadata.retrieval_log_id ? (
-                          <button
-                            className="mini-button"
-                            disabled={isLoadingRetrievalLog}
-                            onClick={() => loadRetrievalLog(result.result_metadata.retrieval_log_id)}
-                            type="button"
-                          >
-                            {isLoadingRetrievalLog ? "Loading log" : "View retrieval log"}
-                          </button>
-                        ) : null}
-                        {result.result_metadata.judge_enabled ? (
-                          <div className="score-row">
-                            judge {String(result.result_metadata.judge_passed ?? false)}
-                            {typeof result.result_metadata.judge_score === "number"
-                              ? ` · ${result.result_metadata.judge_score.toFixed(2)}`
-                              : ""}
-                            {result.result_metadata.judge_reason
-                              ? ` · ${result.result_metadata.judge_reason}`
-                              : ""}
-                            {result.result_metadata.judge_error
-                              ? ` · ${result.result_metadata.judge_error}`
-                              : ""}
-                          </div>
-                        ) : null}
-                      </li>
-                    );
-                  })
-                )}
-              </ol>
-              {selectedRetrievalLog ? (
-                <div className="retrieval-log-detail">
-                  <div className="result-heading">
-                    <strong>Retrieval log {shortId(selectedRetrievalLog.id)}</strong>
-                    <span>
-                      {selectedRetrievalLog.mode} · top {selectedRetrievalLog.top_k} ·{" "}
-                      {selectedRetrievalLog.latency_ms ?? 0}ms
-                    </span>
-                  </div>
-                  <p>{selectedRetrievalLog.query}</p>
-                  <ol>
-                    {selectedRetrievalLog.chunks.map((chunk) => (
-                      <li key={chunk.chunk_id}>
-                        <div className="result-heading">
-                          <strong>
-                            #{chunk.rank} {chunk.document_name}
-                          </strong>
-                          <span>chunk {chunk.chunk_index}</span>
-                        </div>
-                        <p>{chunk.text_preview}</p>
-                        <div className="score-row">
-                          fused {chunk.fused_score?.toFixed(4) ?? "n/a"} · vector{" "}
-                          {chunk.vector_score?.toFixed(4) ?? "n/a"} · keyword{" "}
-                          {chunk.keyword_score?.toFixed(4) ?? "n/a"}
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              ) : null}
-            </section>
+            <EvalRunDetail
+              run={run}
+              resultFilter={resultFilter}
+              setResultFilter={setResultFilter}
+              resultFilterOptions={resultFilterOptions}
+              filteredResults={filteredResults}
+              questionsById={questionsById}
+              documentNamesById={documentNamesById}
+              avgGenerationLatency={avgGenerationLatency}
+              exportRunCsv={exportRunCsv}
+              exportRunJson={exportRunJson}
+              isLoadingRetrievalLog={isLoadingRetrievalLog}
+              loadRetrievalLog={loadRetrievalLog}
+              selectedRetrievalLog={selectedRetrievalLog}
+            />
           )}
         </div>
       </div>
-      {modal ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}>
-          <section
-            aria-modal="true"
-            className="tool-modal"
-            onMouseDown={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <div className="modal-heading">
-              <div>
-                <span className="sidebar-label">Eval</span>
-                <strong>
-                  {modal === "dataset"
-                    ? "New dataset"
-                    : modal === "question"
-                      ? "Add question"
-                      : "Run settings"}
-                </strong>
-              </div>
-              <button className="icon-button" onClick={() => setModal(null)} type="button">
-                Close
-              </button>
-            </div>
-
-            {modal === "dataset" ? (
-              <>
-                <label>
-                  Dataset name
-                  <input
-                    onChange={(event) => setDatasetName(event.target.value)}
-                    placeholder="Quantum basics"
-                    type="text"
-                    value={datasetName}
-                  />
-                </label>
-                <button disabled={!datasetName.trim()} onClick={createDataset} type="button">
-                  Create dataset
-                </button>
-              </>
-            ) : null}
-
-            {modal === "question" ? (
-              <>
-                <label>
-                  Question
-                  <textarea
-                    onChange={(event) => setQuestion(event.target.value)}
-                    placeholder="Question expected from this knowledge base"
-                    rows={4}
-                    value={question}
-                  />
-                </label>
-                <label>
-                  Expected answer notes
-                  <input
-                    onChange={(event) => setExpectedNotes(event.target.value)}
-                    placeholder="keywords such as quantum supremacy"
-                    type="text"
-                    value={expectedNotes}
-                  />
-                </label>
-                <label>
-                  Expected document
-                  <select
-                    onChange={(event) => setExpectedDocumentId(event.target.value)}
-                    value={expectedDocumentId}
-                  >
-                    <option value="">Any retrieved document</option>
-                    {documents.map((document) => (
-                      <option key={document.id} value={document.id}>
-                        {document.filename} · {document.status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Expected chunk id
-                  <input
-                    onChange={(event) => setExpectedChunkId(event.target.value)}
-                    placeholder="optional"
-                    type="text"
-                    value={expectedChunkId}
-                  />
-                </label>
-                <button
-                  disabled={!selectedDatasetId || !question.trim()}
-                  onClick={addQuestion}
-                  type="button"
-                >
-                  Add question
-                </button>
-              </>
-            ) : null}
-
-            {modal === "run" ? (
-              <>
-                <label>
-                  Mode
-                  <select onChange={(event) => setMode(event.target.value as RetrievalMode)} value={mode}>
-                    <option value="hybrid">Hybrid</option>
-                    <option value="vector">Vector</option>
-                    <option value="keyword">Keyword</option>
-                  </select>
-                </label>
-                <label>
-                  Top K
-                  <input
-                    min={1}
-                    max={50}
-                    onChange={(event) => setTopK(Number(event.target.value))}
-                    type="number"
-                    value={topK}
-                  />
-                </label>
-                <label className="checkbox-label">
-                  <input
-                    checked={rerankerEnabled}
-                    onChange={(event) => setRerankerEnabled(event.target.checked)}
-                    type="checkbox"
-                  />
-                  Reranker
-                </label>
-                <label>
-                  Rerank candidates
-                  <input
-                    disabled={!rerankerEnabled}
-                    max={200}
-                    min={1}
-                    onChange={(event) => setRerankerCandidateLimit(Number(event.target.value))}
-                    type="number"
-                    value={rerankerCandidateLimit}
-                  />
-                </label>
-                <label className="checkbox-label">
-                  <input
-                    checked={judgeEnabled}
-                    onChange={(event) => setJudgeEnabled(event.target.checked)}
-                    type="checkbox"
-                  />
-                  LLM judge
-                </label>
-                <button
-                  disabled={!selectedDatasetId || isRunning || !selectedDataset?.question_count}
-                  onClick={runEval}
-                  type="button"
-                >
-                  {isRunning ? "Running" : "Run eval"}
-                </button>
-              </>
-            ) : null}
-          </section>
-        </div>
-      ) : null}
+      <EvalModals
+        modal={modal}
+        onClose={() => setModal(null)}
+        datasetName={datasetName} setDatasetName={setDatasetName}
+        createDataset={createDataset}
+        question={question} setQuestion={setQuestion}
+        expectedNotes={expectedNotes} setExpectedNotes={setExpectedNotes}
+        expectedDocumentId={expectedDocumentId} setExpectedDocumentId={setExpectedDocumentId}
+        expectedChunkId={expectedChunkId} setExpectedChunkId={setExpectedChunkId}
+        addQuestion={addQuestion}
+        documents={documents}
+        selectedDatasetId={selectedDatasetId}
+        mode={mode} setMode={setMode}
+        topK={topK} setTopK={setTopK}
+        rerankerEnabled={rerankerEnabled} setRerankerEnabled={setRerankerEnabled}
+        rerankerCandidateLimit={rerankerCandidateLimit} setRerankerCandidateLimit={setRerankerCandidateLimit}
+        judgeEnabled={judgeEnabled} setJudgeEnabled={setJudgeEnabled}
+        runEval={runEval}
+        isRunning={isRunning}
+        selectedDataset={selectedDataset}
+      />
     </main>
   );
 }
