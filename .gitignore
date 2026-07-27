@@ -29,7 +29,7 @@ data/
 uploads/
 tmp/
 local_tests/
-image.png
+docs/superpowers/progress/
 
 # OS / editors
 .DS_Store

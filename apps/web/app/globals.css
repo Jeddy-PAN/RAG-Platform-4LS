@@ -1894,6 +1894,15 @@ h1 {
   background: var(--accent-soft);
 }
 
+.file-error-inline {
+  display: block;
+  color: var(--danger, #dc3545);
+  font-size: 11px;
+  margin-top: 2px;
+  max-width: 240px;
+  word-break: break-word;
+}
+
 /* chat view inside dashboard */
 .dashboard .chat-view {
   height: 100%;

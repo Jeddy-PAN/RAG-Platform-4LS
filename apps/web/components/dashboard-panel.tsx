@@ -216,7 +216,12 @@ export function DashboardPanel({
                       {documents.map((doc) => (
                         <tr key={doc.id}>
                           <td>{doc.filename}</td>
-                          <td><StatusBadge status={doc.status} /></td>
+                          <td>
+                            <StatusBadge status={doc.status} errorMessage={doc.error_message} />
+                            {doc.status === "failed" && doc.error_message ? (
+                              <span className="file-error-inline">{doc.error_message}</span>
+                            ) : null}
+                          </td>
                           <td style={{ color: "var(--muted)", fontSize: 12 }}>
                             {doc.file_size_bytes > 0 ? `${(doc.file_size_bytes / 1024).toFixed(0)} KB` : "—"}
                           </td>

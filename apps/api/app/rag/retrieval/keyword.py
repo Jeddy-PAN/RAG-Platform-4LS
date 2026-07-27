@@ -13,17 +13,26 @@ def retrieve_keyword(
     project_id: uuid.UUID,
     query: str,
     top_k: int,
+    document_id: uuid.UUID | None = None,
 ) -> list[RetrievalCandidate]:
-    """Retrieve project-scoped chunks with a simple keyword fallback."""
+    """Retrieve project-scoped chunks with a simple keyword fallback.
+
+    When *document_id* is provided, results are further scoped to that
+    document.
+    """
 
     terms = [term.casefold() for term in query.split() if term.strip()]
     if not terms:
         return []
 
+    conditions = [Chunk.project_id == project_id, Chunk.is_active == True]
+    if document_id is not None:
+        conditions.append(Chunk.document_id == document_id)
+
     rows = db.execute(
         select(Chunk, Document)
         .join(Document, Document.id == Chunk.document_id)
-        .where(Chunk.project_id == project_id, Chunk.is_active == True)
+        .where(*conditions)
     ).all()
 
     candidates: list[RetrievalCandidate] = []

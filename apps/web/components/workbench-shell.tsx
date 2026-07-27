@@ -174,7 +174,7 @@ export function WorkbenchShell() {
   }
 
   async function handleDeleteProject(project: Project) {
-    if (!window.confirm(`Delete project "${project.name}" and all its data?`)) return;
+    if (!window.confirm(`Delete project "${project.name}"? This will permanently remove all documents, uploaded files, conversations, and evaluation data.`)) return;
     try {
       await projectsApi.delete(project.id);
       setProjects((current) => current.filter((item) => item.id !== project.id));

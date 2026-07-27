@@ -26,13 +26,22 @@ def retrieve_vector(
     query_embedding: list[float],
     top_k: int,
     similarity_threshold: float = 0.0,
+    document_id: uuid.UUID | None = None,
 ) -> list[RetrievalCandidate]:
-    """Retrieve project-scoped chunks by vector similarity."""
+    """Retrieve project-scoped chunks by vector similarity.
+
+    When *document_id* is provided, results are further scoped to that
+    document.
+    """
+
+    conditions = [Chunk.project_id == project_id, Chunk.is_active == True, Chunk.embedding.is_not(None)]
+    if document_id is not None:
+        conditions.append(Chunk.document_id == document_id)
 
     rows = db.execute(
         select(Chunk, Document)
         .join(Document, Document.id == Chunk.document_id)
-        .where(Chunk.project_id == project_id, Chunk.is_active == True, Chunk.embedding.is_not(None))
+        .where(*conditions)
     ).all()
 
     candidates: list[RetrievalCandidate] = []

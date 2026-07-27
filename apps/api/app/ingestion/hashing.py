@@ -3,7 +3,7 @@ import json
 import uuid
 
 
-CHUNKER_VERSION = "char-word-v1"
+CHUNKER_VERSION = "table-aware-v2"
 
 
 def chunk_content_hash(
