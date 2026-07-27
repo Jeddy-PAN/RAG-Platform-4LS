@@ -12,7 +12,7 @@ import type {
   UUID
 } from "@/lib/types";
 import { AppSidebar } from "./app-sidebar";
-import { DashboardPanel } from "./dashboard-panel";
+import { DashboardPanel } from "@/components/dashboard/dashboard-panel";
 import { TopBar } from "./top-bar";
 
 type DashboardView = "kb-home" | "project-detail" | "chat";

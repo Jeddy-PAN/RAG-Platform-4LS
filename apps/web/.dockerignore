@@ -3,3 +3,6 @@ node_modules/
 out/
 dist/
 coverage/
+*.tsbuildinfo
+.pnpm-store/
+.DS_Store

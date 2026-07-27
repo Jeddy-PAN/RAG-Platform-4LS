@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { projectsApi, retrievalApi } from "@/lib/api";
 import type { Project, RetrievalMode, RetrievalResponse, UUID } from "@/lib/types";
-import { ErrorState } from "./error-state";
+import { ErrorState } from "@/components/shared/error-state";
 import { RetrievalResults } from "./retrieval-results";
 
 export function RetrievalWorkspace() {

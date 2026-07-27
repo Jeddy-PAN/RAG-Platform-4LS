@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import type { AllConversation, ChatMessage, DocumentItem, FeedbackRating, Project, UUID } from "@/lib/types";
-import { ErrorState } from "./error-state";
-import { MessageComposer } from "./message-composer";
-import { MessageList } from "./message-list";
-import { SidebarUploadZone } from "./sidebar-upload-zone";
-import { StatusBadge } from "./status-badge";
+import { ErrorState } from "@/components/shared/error-state";
+import { MessageComposer } from "@/components/chat/message-composer";
+import { MessageList } from "@/components/chat/message-list";
+import { SidebarUploadZone } from "@/components/dashboard/sidebar-upload-zone";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 type DashboardView = "kb-home" | "project-detail" | "chat";
 

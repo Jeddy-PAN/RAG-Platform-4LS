@@ -1,4 +1,4 @@
-import { WorkbenchShell } from "@/components/workbench-shell";
+import { WorkbenchShell } from "@/components/layout/workbench-shell";
 
 export default function HomePage() {
   return <WorkbenchShell />;

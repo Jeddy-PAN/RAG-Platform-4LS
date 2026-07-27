@@ -1,0 +1,79 @@
+@media (max-width: 860px) {
+  .app-shell {
+    height: auto;
+    overflow: visible;
+    grid-template-rows: auto 1fr;
+  }
+
+  .top-bar {
+    position: static;
+    flex-wrap: wrap;
+    min-height: 58px;
+    padding: 12px 14px;
+  }
+
+  .workbench-layout,
+  .tool-page .retrieval-layout {
+    overflow: visible;
+    grid-template-columns: 1fr;
+  }
+
+  .eval-page .retrieval-layout {
+    height: auto;
+    min-height: 0;
+  }
+
+  .eval-page .retrieval-workspace-panel {
+    overflow: visible;
+  }
+
+
+
+  .active-chat {
+    height: auto;
+    min-height: 620px;
+  }
+
+  .message-composer {
+    grid-template-columns: 1fr;
+  }
+
+  .message-composer button {
+    width: 100%;
+  }
+
+  .retrieval-header {
+    flex-direction: column-reverse;
+  }
+
+  .retrieval-query-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .retrieval-query-actions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+
+  .project-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .top-bar-status {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .tool-fab-group {
+    right: 14px;
+    bottom: 14px;
+  }
+
+  .eval-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+}

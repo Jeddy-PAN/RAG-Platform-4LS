@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import "./globals.css";
+import "./styles/base.css";
+import "./styles/shared.css";
+import "./styles/retrieval.css";
+import "./styles/eval.css";
+import "./styles/metrics.css";
+import "./styles/workbench.css";
+import "./styles/responsive.css";
 
 export const metadata: Metadata = {
   title: "Local Enterprise RAG Platform",

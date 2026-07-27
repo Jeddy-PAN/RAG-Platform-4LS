@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { metricsApi, projectsApi } from "@/lib/api";
 import type { ChatMetricsResponse, Project, UUID } from "@/lib/types";
-import { ErrorState } from "./error-state";
+import { ErrorState } from "@/components/shared/error-state";
 
 function formatLatency(value: number | null | undefined) {
   if (typeof value !== "number") {
