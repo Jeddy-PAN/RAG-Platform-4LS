@@ -3,7 +3,6 @@
   gap: 14px;
 }
 
-
 .retrieval-query-panel {
   display: grid;
   gap: 12px;
@@ -114,26 +113,6 @@
   background: rgba(255, 255, 255, 0.68);
 }
 
-
-
-
-
-
-
-
-
-.eval-question-panel,
-
-.eval-question-panel .eval-question-list,
-
-
-
-
-.eval-question-list span,
-
-
-
-
 .retrieval-summary {
   justify-content: space-between;
   padding: 12px 14px;
@@ -187,69 +166,4 @@
 .retrieval-log-detail > ol {
   margin-top: 8px;
   border-top: 1px solid var(--border);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-.metrics-table th,
-
-
-
-.metrics-table th:last-child,
-
-
-
-
-
-
-
-
-.eval-result-filters button.active,
-
-
-
-
-
-
-.eval-run-row.active,
-
-
-
-
-
-
-.eval-export-actions,
-
-
-
-
-
-
-
-.eval-compare-table th,
-
-
-.eval-compare-table th:last-child,
-
-
-.eval-compare-table th:first-child,
-
-.eval-compare-table th span,
-.eval-compare-table th small,
-
-.eval-compare-table th small,
-
-.question-matrix td:first-child {
-  max-width: 280px;
-  font-weight: 750;
-  line-height: 1.45;
 }

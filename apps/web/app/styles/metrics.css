@@ -3,6 +3,7 @@
   align-content: start;
   gap: 14px;
 }
+
 .metrics-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
@@ -12,23 +13,28 @@
   background: var(--panel);
   box-shadow: var(--shadow);
 }
+
 .metrics-cards div {
   display: grid;
   gap: 4px;
   padding: 14px;
   border-right: 1px solid var(--border);
 }
+
 .metrics-cards div:last-child {
   border-right: 0;
 }
+
 .metrics-cards span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
+
 .metrics-cards strong {
   font-size: 20px;
 }
+
 .metrics-table-panel {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -36,14 +42,18 @@
   background: var(--panel);
   box-shadow: var(--shadow);
 }
+
 .metrics-table-scroll {
   overflow-x: auto;
 }
+
 .metrics-table {
   width: 100%;
   min-width: 720px;
   border-collapse: collapse;
 }
+
+.metrics-table th,
 .metrics-table td {
   padding: 12px 14px;
   border-right: 1px solid var(--border);
@@ -51,17 +61,22 @@
   text-align: left;
   font-size: 12px;
 }
+
 .metrics-table th {
   color: var(--muted);
   background: rgba(248, 250, 252, 0.76);
   font-weight: 800;
 }
+
 .metrics-table td {
   color: var(--muted-strong);
 }
+
+.metrics-table th:last-child,
 .metrics-table td:last-child {
   border-right: 0;
 }
+
 .metrics-table tr:last-child td {
   border-bottom: 0;
 }

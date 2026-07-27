@@ -6,3 +6,8 @@ coverage/
 *.tsbuildinfo
 .pnpm-store/
 .DS_Store
+data/
+uploads/
+**/data/
+.env*
+*.log
