@@ -14,7 +14,12 @@ from app.rag.providers.types import EmbeddingProvider
 from app.rag.retrieval.hybrid import fuse_retrieval_results
 from app.rag.retrieval.keyword import retrieve_keyword
 from app.rag.retrieval.rerankers import KeywordOverlapReranker, rerank_candidates
-from app.rag.retrieval.types import RetrievalResult
+from app.rag.retrieval.types import (
+    RetrievalResult,
+    TableContextCoverage,
+    TableSelectionCandidate,
+    TableSelectionOutcome,
+)
 from app.rag.retrieval.vector import retrieve_vector
 from app.services.retrieval_logs import create_retrieval_log
 
@@ -32,6 +37,8 @@ def run_retrieval(
     reranker_enabled: bool = False,
     reranker_candidate_limit: int = 40,
     document_id: uuid.UUID | None = None,
+    preferred_document_id: uuid.UUID | None = None,
+    preferred_table_index: int | None = None,
 ) -> RetrievalResult:
     """Run project-scoped retrieval and persist debug logs.
 
@@ -50,19 +57,25 @@ def run_retrieval(
         detect_table_intent,
         expand_same_table,
         select_target_table,
+        summarize_table_context,
     )
 
     started = time.perf_counter()
     table_intent = False
     is_full_table = False
     expansion_applied = False
-    selection_result: dict | None = None
+    selection_outcome: TableSelectionOutcome | None = None
     context_partial = False
+    table_context: TableContextCoverage | None = None
     initial_limit = max(top_k, reranker_candidate_limit) if reranker_enabled else top_k
 
     try:
         # ── Intent detection (before retrieval) ──
         table_intent, is_full_table = detect_table_intent(query)
+        preferred_table = preferred_document_id is not None and preferred_table_index is not None
+        if preferred_table:
+            table_intent = True
+            is_full_table = True
 
         # Wide candidate pool for full-table queries so the target table
         # does not need to enter the final top_k before selection.
@@ -104,46 +117,71 @@ def run_retrieval(
 
         # ── Table-aware selection and expansion ──
         if is_full_table:
-            sel = select_target_table(query, results)
-            selection_result = {
-                "status": sel.status,
-                "score": sel.score,
-                "score_breakdown": sel.score_breakdown,
-                "reason": sel.reason,
-            }
+            expanded = None
+            if preferred_table:
+                expanded = expand_same_table(
+                    db,
+                    project_id,
+                    preferred_document_id,
+                    preferred_table_index,
+                )
+                if expanded:
+                    first = expanded[0]
+                    metadata = first.source_metadata or {}
+                    selected = TableSelectionCandidate(
+                        document_id=preferred_document_id,
+                        document_name=first.document_name,
+                        table_index=preferred_table_index,
+                        caption=metadata.get("caption"),
+                        score=1.0,
+                        score_breakdown={"conversation_confirmation": 1.0},
+                    )
+                    selection_outcome = TableSelectionOutcome(
+                        status="selected",
+                        selected=selected,
+                        candidates=[selected],
+                        reason="selected from recent clarification",
+                    )
+                else:
+                    selection_outcome = TableSelectionOutcome(
+                        status="insufficient_score",
+                        reason="confirmed table is no longer available",
+                    )
+            else:
+                selection_outcome = select_target_table(query, results)
 
-            if sel.status == "selected":
-                if sel.document_id is not None and sel.table_index is not None:
-                    expanded = expand_same_table(db, project_id, sel.document_id, sel.table_index)
-                    if expanded:
-                        non_table = [
-                            c for c in results
-                            if (c.source_metadata or {}).get("table_chunk_type") not in
-                               ("table", "table_group", "table_row", "table_header")
-                            and c.document_id == sel.document_id
-                        ]
-                        results = expanded + non_table
-                        results = dedup_parent_child(results)
-                        results, context_partial = apply_context_budget(results)
-                        expansion_applied = True
-                        selection_result["document_name"] = sel.document_name
-                        selection_result["table_index"] = sel.table_index
-                        selection_result["alternatives"] = sel.alternatives
-                    else:
-                        # Expansion returned empty — fall back
-                        results = results[:top_k]
-                        selection_result["fallback_to_normal"] = True
+            if selection_outcome.status == "selected" and selection_outcome.selected:
+                selected = selection_outcome.selected
+                expanded = expanded or expand_same_table(
+                    db,
+                    project_id,
+                    selected.document_id,
+                    selected.table_index,
+                )
+                if expanded:
+                    non_table = [
+                        candidate
+                        for candidate in results
+                        if (candidate.source_metadata or {}).get("table_chunk_type")
+                        not in ("table", "table_group", "table_row", "table_header")
+                        and candidate.document_id == selected.document_id
+                    ]
+                    results = dedup_parent_child(expanded + non_table)
+                    results, context_partial = apply_context_budget(results)
+                    expansion_applied = True
                 else:
                     results = results[:top_k]
-                    selection_result["fallback_to_normal"] = True
+                    selection_outcome = TableSelectionOutcome(
+                        status="insufficient_score",
+                        candidates=selection_outcome.candidates,
+                        reason="selected table expansion returned no chunks",
+                    )
 
-            elif sel.status == "ambiguous":
+            elif selection_outcome.status == "ambiguous":
                 results = results[:top_k]
-                selection_result["alternatives"] = sel.alternatives
 
             else:  # "none" or "insufficient_score" — fall back to normal retrieval
                 results = results[:top_k]
-                selection_result["fallback_to_normal"] = True
 
         # ── Final truncation ──
         if reranker_enabled:
@@ -151,6 +189,9 @@ def run_retrieval(
             results = rerank_candidates(query, results, top_k=actual_top_k, provider=KeywordOverlapReranker())
         elif not expansion_applied:
             results = results[:top_k]
+
+        if expansion_applied and selection_outcome and selection_outcome.selected:
+            table_context = summarize_table_context(results, selection_outcome.selected)
     except EmbeddingProviderError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -158,6 +199,30 @@ def run_retrieval(
         ) from exc
 
     latency_ms = int((time.perf_counter() - started) * 1000)
+    selection_metadata = None
+    if selection_outcome is not None:
+        selection_metadata = {
+            "status": selection_outcome.status,
+            "reason": selection_outcome.reason,
+            "selected": (
+                {
+                    **selection_outcome.selected.identity_metadata(),
+                    "score": selection_outcome.selected.score,
+                    "score_breakdown": selection_outcome.selected.score_breakdown,
+                }
+                if selection_outcome.selected
+                else None
+            ),
+            "candidates": [
+                {
+                    **candidate.identity_metadata(),
+                    "score": candidate.score,
+                    "score_breakdown": candidate.score_breakdown,
+                }
+                for candidate in selection_outcome.candidates
+            ],
+        }
+
     log_metadata = {
         "vector_weight": vector_weight,
         "keyword_weight": keyword_weight,
@@ -169,7 +234,8 @@ def run_retrieval(
         "is_full_table": is_full_table,
         "expansion_applied": expansion_applied,
         "context_partial": context_partial,
-        "table_selection": selection_result,
+        "table_context": table_context.to_metadata() if table_context else None,
+        "table_selection": selection_metadata,
     }
     log = create_retrieval_log(
         db,
@@ -188,4 +254,7 @@ def run_retrieval(
         latency_ms=latency_ms,
         results=results,
         retrieval_log_id=log.id,
+        table_selection=selection_outcome,
+        context_partial=context_partial,
+        table_context=table_context,
     )

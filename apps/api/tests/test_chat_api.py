@@ -1,15 +1,107 @@
 import uuid
 
+from app.models.chunk import Chunk
 from app.models.conversation import Conversation, Message, MessageCitation
+from app.models.document import Document, DocumentStatus
 from app.models.metrics import ChatRequestMetric
+from app.models.project import Project
 from app.models.retrieval import RetrievalLog
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
 
 
 class FakeChatProvider:
+    def __init__(self) -> None:
+        self.calls = []
+
     def generate_chat_completion(self, messages, temperature=0.1):
+        self.calls.append(messages)
         return ChatProviderResult(content="Escalation starts after triage.", model="fake-chat")
+
+
+def seed_ambiguous_tables(sqlite_session_factory) -> tuple[uuid.UUID, list[uuid.UUID]]:
+    """Create two equally relevant server tables in one project."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"ambiguous-tables-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document_ids: list[uuid.UUID] = []
+        for index, filename in enumerate(("production.docx", "staging.docx")):
+            document = Document(
+                project_id=project.id,
+                filename=filename,
+                storage_path=f"/tmp/{filename}",
+                file_size_bytes=100,
+                status=DocumentStatus.indexed,
+            )
+            db.add(document)
+            db.flush()
+            document_ids.append(document.id)
+            db.add(
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=0,
+                    text=f"ServerName | Host\napp-{index + 1} | 10.0.0.{index + 1}",
+                    content_hash=str(uuid.uuid4()),
+                    embedding=[0.1] * 1024,
+                    source_metadata={
+                        "type": "table",
+                        "table_index": 0,
+                        "table_chunk_type": "table",
+                        "headers": ["ServerName", "Host"],
+                        "data_row_start": 1,
+                        "data_row_end": 1,
+                        "total_rows": 1,
+                    },
+                )
+            )
+        db.commit()
+        return project.id, document_ids
+
+
+def seed_oversized_table(sqlite_session_factory) -> uuid.UUID:
+    """Create one table whose row groups cannot both fit the context budget."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"oversized-table-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="large-servers.docx",
+            storage_path="/tmp/large-servers.docx",
+            file_size_bytes=10_000,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        for index, (row_start, row_end) in enumerate(((1, 4), (5, 8))):
+            text = "ServerName | Host\n" + " ".join(
+                f"server-{index}-{word}" for word in range(800)
+            )
+            db.add(
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=index,
+                    text=text,
+                    content_hash=str(uuid.uuid4()),
+                    embedding=[0.1] * 1024,
+                    source_metadata={
+                        "type": "table",
+                        "table_index": 0,
+                        "table_chunk_type": "table_group",
+                        "headers": ["ServerName", "Host"],
+                        "data_row_start": row_start,
+                        "data_row_end": row_end,
+                        "total_rows": 8,
+                    },
+                )
+            )
+        db.commit()
+        return project.id
 
 
 def test_chat_api_creates_conversation_messages_and_citations(
@@ -192,6 +284,134 @@ def test_chat_api_returns_refusal_without_retrieved_context(
 
     assert response.status_code == 200
     assert "cannot answer" in response.json()["answer"].lower()
+
+
+def test_chat_api_clarifies_ambiguous_tables_without_calling_provider(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Ambiguous project tables should return choices instead of an LLM guess."""
+
+    project_id, document_ids = seed_ambiguous_tables(sqlite_session_factory)
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: (_ for _ in ()).throw(AssertionError("provider should not be called")),
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "conversation_id": None,
+            "message": "server列表",
+            "retrieval": {"mode": "hybrid", "top_k": 8},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model"] == "local-table-clarification"
+    assert "production.docx" in body["answer"]
+    assert "staging.docx" in body["answer"]
+    assert body["citations"] == []
+
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(body["assistant_message_id"]))
+        candidates = assistant.message_metadata["table_selection"]["candidates"]
+        assert {uuid.UUID(candidate["document_id"]) for candidate in candidates} == set(document_ids)
+        assert all("score" not in candidate for candidate in candidates)
+
+
+def test_chat_api_uses_ordinal_reply_to_confirm_ambiguous_table(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """A follow-up ordinal should expand the chosen table without another ambiguity."""
+
+    project_id, document_ids = seed_ambiguous_tables(sqlite_session_factory)
+    provider = FakeChatProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+
+    clarification = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={"message": "server列表", "retrieval": {"mode": "hybrid", "top_k": 8}},
+    )
+    with sqlite_session_factory() as db:
+        clarification_message = db.get(
+            Message,
+            uuid.UUID(clarification.json()["assistant_message_id"]),
+        )
+        first_candidate_id = clarification_message.message_metadata["table_selection"][
+            "candidates"
+        ][0]["document_id"]
+    confirmation = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "conversation_id": clarification.json()["conversation_id"],
+            "message": "第一个",
+            "retrieval": {"mode": "hybrid", "top_k": 8},
+        },
+    )
+
+    assert clarification.status_code == 200
+    assert confirmation.status_code == 200
+    assert confirmation.json()["model"] == "fake-chat"
+    assert len(provider.calls) == 1
+
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(confirmation.json()["assistant_message_id"]))
+        selected = assistant.message_metadata["table_selection"]["selected"]
+        assert selected["document_id"] == first_candidate_id
+
+
+def test_chat_api_passes_partial_table_coverage_to_prompt_and_metadata(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Budget-truncated tables must constrain generation and expose row coverage."""
+
+    project_id = seed_oversized_table(sqlite_session_factory)
+    provider = FakeChatProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={"message": "server列表", "retrieval": {"mode": "hybrid", "top_k": 8}},
+    )
+
+    assert response.status_code == 200
+    assert len(provider.calls) == 1
+    system_message = provider.calls[0][0]["content"]
+    assert "table context is partial" in system_message
+    assert "rows 1-4 of 8" in system_message
+
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(response.json()["assistant_message_id"]))
+        assert assistant.message_metadata["context_partial"] is True
+        assert assistant.message_metadata["table_context"]["row_ranges"] == [[1, 4]]
+        retrieval_log = db.get(RetrievalLog, uuid.UUID(response.json()["retrieval_log_id"]))
+        assert retrieval_log.retrieval_metadata["context_partial"] is True
+        assert retrieval_log.retrieval_metadata["table_context"]["total_rows"] == 8
 
 
 def test_chat_api_rejects_cross_project_conversation(

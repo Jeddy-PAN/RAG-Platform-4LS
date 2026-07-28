@@ -6,14 +6,18 @@ the target document and table without requiring a frontend file selector.
 
 import re
 import uuid
-from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.chunk import Chunk
 from app.models.document import Document
-from app.rag.retrieval.types import RetrievalCandidate
+from app.rag.retrieval.types import (
+    RetrievalCandidate,
+    TableContextCoverage,
+    TableSelectionCandidate,
+    TableSelectionOutcome,
+)
 
 
 # ── Intent detection ──────────────────────────────────────────────
@@ -143,20 +147,6 @@ def detect_table_intent(query: str) -> tuple[bool, bool]:
 # ── Table identity and scoring ────────────────────────────────────
 
 
-@dataclass
-class TableSelectionResult:
-    """Outcome of table-identity selection from a candidate pool."""
-
-    status: str  # "selected" | "ambiguous" | "none" | "insufficient_score"
-    document_id: uuid.UUID | None = None
-    document_name: str | None = None
-    table_index: int | None = None
-    score: float = 0.0
-    score_breakdown: dict = field(default_factory=dict)
-    alternatives: list[dict] = field(default_factory=list)
-    reason: str = ""
-
-
 # Context budget in approximate word tokens.
 DEFAULT_TABLE_CONTEXT_BUDGET = 1500
 
@@ -172,6 +162,95 @@ def _normalise_filename(name: str) -> str:
     return re.sub(r"[_\-\s]+", " ", stem).strip().casefold()
 
 
+def _normalise_match_text(value: str) -> str:
+    """Normalize separators and camel case before semantic token matching."""
+
+    separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    return re.sub(r"[_\-\s]+", " ", separated).strip().casefold()
+
+
+def _match_tokens(value: str) -> set[str]:
+    """Extract ASCII and CJK tokens without merging mixed-language phrases."""
+
+    return set(re.findall(r"[a-z0-9]+|[\u3400-\u9fff]+", _normalise_match_text(value)))
+
+
+def _is_domain_list_query(query: str) -> bool:
+    """Return whether the query uses a known domain-specific list phrase."""
+
+    lowered = query.casefold()
+    return any(phrase in query for phrase in _DOMAIN_LIST_CN) or any(
+        re.search(pattern, lowered) for pattern in _DOMAIN_LIST_EN
+    )
+
+
+def _header_match_score(query: str, header: str) -> float:
+    """Match headers by phrase, token, prefix, and common domain concepts."""
+
+    normalized_query = _normalise_match_text(query)
+    normalized_header = _normalise_match_text(header)
+    if normalized_header and normalized_header in normalized_query:
+        return 1.0
+
+    query_tokens = _match_tokens(query)
+    header_tokens = _match_tokens(header)
+    for query_token in query_tokens:
+        for header_token in header_tokens:
+            if len(query_token) >= 3 and len(header_token) >= 3:
+                if query_token == header_token:
+                    return 1.0
+                if query_token.startswith(header_token) or header_token.startswith(query_token):
+                    return 0.9
+
+    concept_aliases = (
+        ("server", "服务器", "主机"),
+        ("host", "主机"),
+        ("account", "账号"),
+        ("username", "user name", "用户名", "用户"),
+        ("password", "密码"),
+        ("service", "服务"),
+        ("node", "节点"),
+        ("instance", "实例"),
+    )
+    compact_query = normalized_query.replace(" ", "")
+    compact_header = normalized_header.replace(" ", "")
+    for aliases in concept_aliases:
+        if any(alias.replace(" ", "") in compact_query for alias in aliases) and any(
+            alias.replace(" ", "") in compact_header for alias in aliases
+        ):
+            return 0.8
+    return 0.0
+
+
+def _candidate_relevance(candidate: RetrievalCandidate) -> float:
+    """Return a comparable 0..1 relevance signal across retrieval modes."""
+
+    metadata = candidate.score_metadata or {}
+    vector_relevance = (
+        max(0.0, min(float(candidate.vector_score), 1.0))
+        if candidate.vector_score is not None
+        else 0.0
+    )
+    keyword_relevance = (
+        1.0 - 1.0 / (1.0 + max(float(candidate.keyword_score), 0.0))
+        if candidate.keyword_score is not None
+        else 0.0
+    )
+    absolute_relevance = max(vector_relevance, keyword_relevance)
+    if candidate.fused_score is not None and (
+        "normalized_vector_score" in metadata or "normalized_keyword_score" in metadata
+    ):
+        fused_relevance = max(0.0, min(float(candidate.fused_score), 1.0))
+        return max(absolute_relevance, min(fused_relevance, absolute_relevance + 0.2))
+    if candidate.vector_score is not None:
+        return vector_relevance
+    if candidate.keyword_score is not None:
+        return keyword_relevance
+    if candidate.fused_score is not None:
+        return max(0.0, min(float(candidate.fused_score), 1.0))
+    return 0.0
+
+
 def _score_table_group(
     query: str,
     doc_id: uuid.UUID,
@@ -180,13 +259,13 @@ def _score_table_group(
     candidates: list[RetrievalCandidate],
 ) -> tuple[float, dict]:
     """Score a (document_id, table_index) group against the query."""
-    lowered = query.casefold()
+    lowered = _normalise_match_text(query)
     norm_name = _normalise_filename(doc_name)
     breakdown: dict = {}
 
     # 1. Filename match — highest weight
     name_tokens = set(norm_name.split())
-    query_tokens = set(lowered.split())
+    query_tokens = _match_tokens(query)
     name_overlap = name_tokens & query_tokens
     # Also check if the full normalised name appears as a phrase
     filename_hit = norm_name in lowered
@@ -202,9 +281,12 @@ def _score_table_group(
     caption_scores = []
     for c in candidates:
         caption = (c.source_metadata or {}).get("caption")
-        if caption and caption.casefold() in lowered:
+        normalized_caption = _normalise_match_text(caption) if caption else ""
+        if normalized_caption and normalized_caption in lowered:
             caption_scores.append(1.0)
-        elif caption and any(t in caption.casefold() for t in query_tokens if len(t) > 2):
+        elif caption and any(
+            token in normalized_caption for token in query_tokens if len(token) > 2
+        ):
             caption_scores.append(0.5)
     score_caption = max(caption_scores) if caption_scores else 0.0
     breakdown["caption"] = score_caption
@@ -214,28 +296,34 @@ def _score_table_group(
     for c in candidates:
         headers = (c.source_metadata or {}).get("headers") or []
         for h in headers:
-            if h and h.casefold() in lowered:
-                header_scores.append(1.0)
+            if h:
+                header_scores.append(_header_match_score(query, h))
     score_headers = max(header_scores) if header_scores else 0.0
     breakdown["headers"] = score_headers
 
-    # 4. Top retrieval scores
-    top_scores = sorted(
-        [c.vector_score or 0.0 for c in candidates] +
-        [c.keyword_score or 0.0 for c in candidates] +
-        [c.fused_score or 0.0 for c in candidates],
-        reverse=True,
-    )[:5]
-    score_retrieval = sum(top_scores) / max(len(top_scores), 1)
-    breakdown["retrieval_top5"] = round(score_retrieval, 3)
+    # 4. Strongest retrieval evidence for this table, normalized to 0..1.
+    score_retrieval = max((_candidate_relevance(c) for c in candidates), default=0.0)
+    breakdown["retrieval"] = round(score_retrieval, 3)
+
+    # 5. Explicit list intent is useful evidence, but cannot pass the
+    # threshold by itself when retrieval and table identity are unrelated.
+    _, is_full_table_query = detect_table_intent(query)
+    if _is_domain_list_query(query):
+        score_intent = 1.0
+    elif is_full_table_query:
+        score_intent = 0.5
+    else:
+        score_intent = 0.0
+    breakdown["list_intent"] = score_intent
 
     # Weighted combination
     total = (
         score_name * 3.0 +
         score_caption * 2.0 +
-        score_headers * 1.5 +
-        score_retrieval * 1.0
-    ) / 7.5
+        score_headers * 2.0 +
+        score_retrieval * 2.0 +
+        score_intent * 1.0
+    ) / 10.0
     return round(total, 4), breakdown
 
 
@@ -264,10 +352,10 @@ def select_target_table(
     query: str,
     candidates: list[RetrievalCandidate],
     min_score_gap: float = 0.15,
-) -> TableSelectionResult:
+) -> TableSelectionOutcome:
     """Select the best-matching table from a wide candidate pool.
 
-    Returns ``TableSelectionResult`` with:
+    Returns ``TableSelectionOutcome`` with:
     - ``selected`` when one table clearly wins
     - ``ambiguous`` when the top two are too close
     - ``insufficient_score`` when the best score is too low
@@ -275,52 +363,57 @@ def select_target_table(
     """
     groups = _aggregate_candidates_by_table(candidates)
     if not groups:
-        return TableSelectionResult(status="none", reason="no table candidates in pool")
+        return TableSelectionOutcome(status="none", reason="no table candidates in pool")
 
-    scored: list[tuple[float, dict, uuid.UUID, str, int]] = []
+    scored: list[TableSelectionCandidate] = []
     for (doc_id, t_idx), group in groups.items():
         doc_name = group[0].document_name or "unknown"
         score, breakdown = _score_table_group(query, doc_id, doc_name, t_idx, group)
-        scored.append((score, breakdown, doc_id, doc_name, t_idx))
+        caption = next(
+            (
+                (candidate.source_metadata or {}).get("caption")
+                for candidate in group
+                if (candidate.source_metadata or {}).get("caption")
+            ),
+            None,
+        )
+        scored.append(
+            TableSelectionCandidate(
+                document_id=doc_id,
+                document_name=doc_name,
+                table_index=t_idx,
+                caption=caption,
+                score=score,
+                score_breakdown=breakdown,
+            )
+        )
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    best_score, best_breakdown, best_doc, best_name, best_idx = scored[0]
-
-    alternatives = [
-        {"document_name": name, "table_index": idx, "score": s, "breakdown": b}
-        for s, b, _, name, idx in scored[1:4]
-    ]
+    scored.sort(key=lambda candidate: candidate.score, reverse=True)
+    candidates_out = scored[:4]
+    best = scored[0]
 
     # Absolute minimum score — avoid hijacking ordinary queries
-    if best_score < _MIN_TABLE_SCORE:
-        return TableSelectionResult(
+    if best.score < _MIN_TABLE_SCORE:
+        return TableSelectionOutcome(
             status="insufficient_score",
-            score=best_score,
-            score_breakdown=best_breakdown,
-            alternatives=alternatives,
-            reason=f"best score {best_score:.3f} below minimum {_MIN_TABLE_SCORE}",
+            candidates=candidates_out,
+            reason=f"best score {best.score:.3f} below minimum {_MIN_TABLE_SCORE}",
         )
 
     if len(scored) > 1:
-        second_score = scored[1][0]
-        gap = best_score - second_score
+        second_score = scored[1].score
+        gap = best.score - second_score
         if gap < min_score_gap:
-            return TableSelectionResult(
+            return TableSelectionOutcome(
                 status="ambiguous",
-                score=best_score,
-                score_breakdown=best_breakdown,
-                alternatives=alternatives,
+                candidates=candidates_out,
                 reason=f"top candidates too close (gap={gap:.3f} < {min_score_gap})",
             )
 
-    return TableSelectionResult(
+    return TableSelectionOutcome(
         status="selected",
-        document_id=best_doc,
-        document_name=best_name,
-        table_index=best_idx,
-        score=best_score,
-        score_breakdown=best_breakdown,
-        alternatives=alternatives,
+        selected=best,
+        candidates=candidates_out,
         reason="selected by scoring",
     )
 
@@ -469,3 +562,50 @@ def apply_context_budget(
     for i, c in enumerate(kept, start=1):
         c.rank = i
     return kept, is_partial
+
+
+def summarize_table_context(
+    chunks: list[RetrievalCandidate],
+    selected: TableSelectionCandidate,
+) -> TableContextCoverage:
+    """Summarize the selected table rows represented by kept chunks."""
+
+    ranges: list[tuple[int, int]] = []
+    total_rows: int | None = None
+    for chunk in chunks:
+        metadata = chunk.source_metadata or {}
+        if (
+            chunk.document_id != selected.document_id
+            or metadata.get("table_index") != selected.table_index
+        ):
+            continue
+
+        metadata_total = metadata.get("total_rows") or metadata.get("row_count")
+        if isinstance(metadata_total, int) and metadata_total > 0:
+            total_rows = max(total_rows or 0, metadata_total)
+
+        row_start = metadata.get("data_row_start")
+        row_end = metadata.get("data_row_end")
+        if isinstance(row_start, int) and isinstance(row_end, int) and row_start > 0:
+            ranges.append((row_start, row_end))
+            continue
+
+        data_row = metadata.get("data_row")
+        if isinstance(data_row, int) and data_row > 0:
+            ranges.append((data_row, data_row))
+
+    merged_ranges: list[tuple[int, int]] = []
+    for row_start, row_end in sorted(ranges):
+        if not merged_ranges or row_start > merged_ranges[-1][1] + 1:
+            merged_ranges.append((row_start, row_end))
+        else:
+            previous_start, previous_end = merged_ranges[-1]
+            merged_ranges[-1] = (previous_start, max(previous_end, row_end))
+
+    return TableContextCoverage(
+        document_id=selected.document_id,
+        document_name=selected.document_name,
+        table_index=selected.table_index,
+        row_ranges=merged_ranges,
+        total_rows=total_rows,
+    )

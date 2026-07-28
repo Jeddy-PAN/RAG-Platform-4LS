@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.conversation import Conversation, Message
+from app.models.conversation import Conversation, Message, MessageRole
 from app.models.project import Project
 
 
@@ -133,6 +133,34 @@ def list_recent_messages(
     )
     messages.reverse()
     return [{"role": message.role.value, "content": message.content} for message in messages]
+
+
+def get_pending_table_clarification(
+    db: Session,
+    project_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+) -> dict | None:
+    """Return candidates when the latest message asked the user to choose a table."""
+
+    latest = db.scalar(
+        select(Message)
+        .where(
+            Message.project_id == project_id,
+            Message.conversation_id == conversation_id,
+            Message.role == MessageRole.assistant,
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    if latest is None:
+        return None
+    table_selection = (latest.message_metadata or {}).get("table_selection")
+    if not isinstance(table_selection, dict) or table_selection.get("status") != "ambiguous":
+        return None
+    candidates = table_selection.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return None
+    return table_selection
 
 
 def list_all_conversations(

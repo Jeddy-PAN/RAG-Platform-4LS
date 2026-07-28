@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.rag.retrieval.types import RetrievalCandidate
+from app.rag.retrieval.types import RetrievalCandidate, TableContextCoverage
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,8 @@ def build_chat_prompt(
     question: str,
     retrieved_chunks: list[RetrievalCandidate],
     recent_messages: list[dict[str, str]],
+    context_partial: bool = False,
+    table_context: TableContextCoverage | None = None,
 ) -> ChatPrompt:
     """Build grounded chat messages from retrieved chunks and recent history."""
 
@@ -57,11 +59,34 @@ def build_chat_prompt(
             )
         )
 
+    partial_instruction = ""
+    if context_partial:
+        coverage = ""
+        if table_context:
+            ranges = ", ".join(
+                str(start) if start == end else f"{start}-{end}"
+                for start, end in table_context.row_ranges
+            )
+            if ranges and table_context.total_rows:
+                coverage = (
+                    f" The provided context covers data rows {ranges} of "
+                    f"{table_context.total_rows}."
+                )
+            elif ranges:
+                coverage = f" The provided context covers data rows {ranges}."
+        partial_instruction = (
+            "IMPORTANT: The selected table context is partial because it exceeded "
+            "the context budget. Do not state or imply that the answer lists all "
+            "rows or is complete. Explicitly tell the user that only part of the "
+            f"table is covered.{coverage}\n\n"
+        )
+
     system_content = (
         "You are a project-scoped RAG assistant. Answer only from the provided "
         "knowledge base context. If the context is insufficient, say you cannot "
         "answer from the selected knowledge base. Cite sources by referring to "
         "the provided source numbers.\n\n"
+        + partial_instruction
         + "\n\n".join(source_blocks)
     )
     messages = [{"role": "system", "content": system_content}]

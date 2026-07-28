@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from app.rag.prompting import PromptSource, build_chat_prompt
 from app.rag.providers.chat import OpenAIChatProvider
 from app.rag.providers.types import ChatProvider
-from app.rag.retrieval.types import RetrievalCandidate
+from app.rag.retrieval.types import RetrievalCandidate, TableContextCoverage
 
 
 NO_ANSWER_MESSAGE = (
@@ -26,10 +26,18 @@ def generate_answer(
     retrieved_chunks: list[RetrievalCandidate],
     recent_messages: list[dict[str, str]],
     chat_provider: ChatProvider | None = None,
+    context_partial: bool = False,
+    table_context: TableContextCoverage | None = None,
 ) -> AnswerResult:
     """Generate a grounded answer or a local no-answer refusal."""
 
-    prompt = build_chat_prompt(question, retrieved_chunks, recent_messages)
+    prompt = build_chat_prompt(
+        question,
+        retrieved_chunks,
+        recent_messages,
+        context_partial=context_partial,
+        table_context=table_context,
+    )
     if prompt.should_refuse:
         return AnswerResult(answer=NO_ANSWER_MESSAGE, model="local-refusal")
 
