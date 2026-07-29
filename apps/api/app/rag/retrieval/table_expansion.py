@@ -32,8 +32,11 @@ _LIST_ACTIONS_EN = [
 
 # Objects that explicitly refer to tables / rows / records.
 _TABLE_OBJECTS_CN = [
-    "表格", "表", "行", "记录", "条目",
+    "表格", "数据表", "配置表", "记录表", "记录", "条目",
     "表格内容", "数据行", "每一行",
+]
+_TABLE_OBJECT_PATTERNS_CN = [
+    r"(?:所有行|全部行|各行)(?!为)",
 ]
 _TABLE_OBJECTS_EN = [
     r"\btable\b", r"\brow\b", r"\brecords?\b", r"\bentries?\b",
@@ -52,12 +55,17 @@ _DOMAIN_LIST_EN = [
 
 # Full table request patterns: action + table object together.
 _FULL_TABLE_PATTERNS_CN = [
-    "列出.*表格", "罗列.*表", "显示.*表格",
-    "表格.*列出", "表格.*全部",
-    "列出.*记录", "列出.*行",
-    "完整表格", "表格内容",
-    "逐行", "全部记录", "所有记录",
-    "罗列.*表格", "显示.*所有",
+    r"列出.*(?:表格|数据表|配置表|记录表)",
+    r"罗列.*(?:表格|数据表|配置表|记录表)",
+    r"显示.*(?:表格|数据表|配置表|记录表)",
+    r"表格.*(?:列出|全部)",
+    r"列出.*记录",
+    r"(?:列出|罗列|显示|展示).*(?:数据行|每一行|所有行(?!为)|全部行(?!为)|各行(?!为))",
+    r"完整表格",
+    r"表格内容",
+    r"逐行",
+    r"全部记录",
+    r"所有记录",
 ]
 # Note: standalone "列出全部" / "罗列全部" removed — too general.
 # Those only trigger when paired with a table_object or domain_list.
@@ -103,8 +111,8 @@ def detect_table_intent(query: str) -> tuple[bool, bool]:
             return True, True
 
     # ── Explicit full-table patterns ──
-    for phrase in _FULL_TABLE_PATTERNS_CN:
-        if phrase in query:
+    for pattern in _FULL_TABLE_PATTERNS_CN:
+        if re.search(pattern, query):
             return True, True
     for pattern in _FULL_TABLE_PATTERNS_EN:
         if re.search(pattern, lowered):
@@ -113,7 +121,9 @@ def detect_table_intent(query: str) -> tuple[bool, bool]:
     # ── Compound signal: action + table object ──
     has_action_cn = any(a in query for a in _LIST_ACTIONS_CN)
     has_action_en = any(re.search(p, lowered) for p in _LIST_ACTIONS_EN)
-    has_table_obj_cn = any(o in query for o in _TABLE_OBJECTS_CN)
+    has_table_obj_cn = any(o in query for o in _TABLE_OBJECTS_CN) or any(
+        re.search(pattern, query) for pattern in _TABLE_OBJECT_PATTERNS_CN
+    )
     has_table_obj_en = any(re.search(p, lowered) for p in _TABLE_OBJECTS_EN)
 
     has_action = has_action_cn or has_action_en
@@ -469,8 +479,9 @@ def expand_same_table(
 
 
 def dedup_parent_child(chunks: list[RetrievalCandidate]) -> list[RetrievalCandidate]:
-    """Remove child rows covered by a parent table/group chunk."""
+    """Remove headers and child rows already represented by parent chunks."""
     covered: list[tuple[uuid.UUID, int, int, int]] = []
+    parent_tables: set[tuple[uuid.UUID, int]] = set()
     parents: list[RetrievalCandidate] = []
     others: list[RetrievalCandidate] = []
 
@@ -479,21 +490,32 @@ def dedup_parent_child(chunks: list[RetrievalCandidate]) -> list[RetrievalCandid
         ct = meta.get("table_chunk_type", "")
         if ct in ("table", "table_group"):
             parents.append(c)
+            table_index = meta.get("table_index")
+            if c.document_id and table_index is not None:
+                parent_tables.add((c.document_id, table_index))
             rs = meta.get("data_row_start")
             re = meta.get("data_row_end")
-            if c.document_id and meta.get("table_index") is not None and rs and re:
-                covered.append((c.document_id, meta["table_index"], rs, re))
+            if c.document_id and table_index is not None and rs and re:
+                covered.append((c.document_id, table_index, rs, re))
         else:
             others.append(c)
 
     kept = list(parents)
     for c in others:
         meta = c.source_metadata or {}
+        table_index = meta.get("table_index")
+        if (
+            meta.get("table_chunk_type") == "table_header"
+            and c.document_id
+            and table_index is not None
+            and (c.document_id, table_index) in parent_tables
+        ):
+            continue
         if meta.get("table_chunk_type") == "table_row":
             d_row = meta.get("data_row")
-            if d_row is not None and c.document_id and meta.get("table_index") is not None:
+            if d_row is not None and c.document_id and table_index is not None:
                 if any(
-                    cd == c.document_id and ct == meta["table_index"] and crs <= d_row <= cre
+                    cd == c.document_id and ct == table_index and crs <= d_row <= cre
                     for cd, ct, crs, cre in covered
                 ):
                     continue

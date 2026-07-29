@@ -1,3 +1,4 @@
+import math
 import uuid
 
 import numpy as np
@@ -5,6 +6,7 @@ import numpy as np
 from app.models.chunk import Chunk
 from app.models.document import Document, DocumentStatus
 from app.models.project import Project
+from app.models.retrieval import RetrievalLog
 from app.rag.retrieval.types import RetrievalCandidate, RetrievalResult
 
 
@@ -69,6 +71,56 @@ def seed_chunks(sqlite_session_factory, texts: list[str]) -> uuid.UUID:
         return project.id
 
 
+def seed_low_relevance_table(sqlite_session_factory) -> uuid.UUID:
+    """Insert a strong paragraph and a weak table candidate in one project."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"Fallback {uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="handbook.docx",
+            storage_path="/tmp/handbook.docx",
+            file_size_bytes=100,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        db.add_all(
+            [
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=0,
+                    text="Relevant ordinary paragraph",
+                    content_hash=str(uuid.uuid4()),
+                    embedding=[1.0] + [0.0] * 1023,
+                    source_metadata={"type": "paragraph"},
+                ),
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=1,
+                    text="Unrelated inventory table",
+                    content_hash=str(uuid.uuid4()),
+                    embedding=[0.1, math.sqrt(0.99)] + [0.0] * 1022,
+                    source_metadata={
+                        "type": "table",
+                        "table_index": 0,
+                        "table_chunk_type": "table",
+                        "headers": ["InventoryCode"],
+                        "data_row_start": 1,
+                        "data_row_end": 1,
+                        "total_rows": 1,
+                    },
+                ),
+            ]
+        )
+        db.commit()
+        return project.id
+
+
 def test_retrieval_api_returns_debug_fields(api_client, sqlite_session_factory, monkeypatch):
     """Retrieval API should return scored results and a log id."""
 
@@ -101,6 +153,65 @@ def test_retrieval_api_returns_debug_fields(api_client, sqlite_session_factory, 
         "fused_score",
         "score_metadata",
     }
+
+
+def test_full_table_query_without_table_candidates_falls_back_to_normal_top_k(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """A table-shaped query must preserve normal retrieval when no table exists."""
+
+    project_id = seed_chunks(
+        sqlite_session_factory,
+        ["first ordinary paragraph", "second ordinary paragraph"],
+    )
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type("Provider", (), {"embed_texts": lambda self, texts: [[0.1] * 1024]})(),
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/retrieval/query",
+        json={"query": "list all rows", "mode": "vector", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == 1
+    with sqlite_session_factory() as db:
+        log = db.get(RetrievalLog, uuid.UUID(response.json()["retrieval_log_id"]))
+        assert log.retrieval_metadata["table_selection"]["status"] == "none"
+        assert log.retrieval_metadata["expansion_applied"] is False
+
+
+def test_low_scoring_table_falls_back_to_stronger_normal_result(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """An insufficient table score must not replace the ordinary top result."""
+
+    project_id = seed_low_relevance_table(sqlite_session_factory)
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: type(
+            "Provider",
+            (),
+            {"embed_texts": lambda self, texts: [[1.0] + [0.0] * 1023]},
+        )(),
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/retrieval/query",
+        json={"query": "list all rows", "mode": "vector", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["text_preview"] == "Relevant ordinary paragraph"
+    with sqlite_session_factory() as db:
+        log = db.get(RetrievalLog, uuid.UUID(response.json()["retrieval_log_id"]))
+        assert log.retrieval_metadata["table_selection"]["status"] == "insufficient_score"
+        assert log.retrieval_metadata["expansion_applied"] is False
 
 
 def test_retrieval_api_can_rerank_wider_candidate_set(
