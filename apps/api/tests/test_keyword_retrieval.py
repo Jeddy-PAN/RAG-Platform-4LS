@@ -21,7 +21,7 @@ def test_keyword_retrieval_ranks_matches_and_ignores_embedding(sqlite_session_fa
         results = retrieve_keyword(db, project.id, "alpha", top_k=5)
 
     assert [result.text for result in results] == ["alpha alpha escalation"]
-    assert results[0].keyword_score == 2.0
+    assert results[0].keyword_score == 1.0
 
 
 def test_keyword_retrieval_rejects_empty_query_before_search(sqlite_session_factory) -> None:

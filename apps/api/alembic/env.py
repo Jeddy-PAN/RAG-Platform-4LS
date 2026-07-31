@@ -18,16 +18,16 @@ target_metadata = Base.metadata
 
 
 def get_database_url() -> str:
-    """Resolve migration URL from env, Alembic config, then app settings."""
-
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        return database_url
+    """Resolve an explicit Alembic URL before environment defaults."""
 
     configured_url = config.get_main_option("sqlalchemy.url")
     default_url = "postgresql+psycopg://rag:rag@postgres:5432/rag"
     if configured_url and configured_url != default_url:
         return configured_url
+
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return database_url
 
     return get_settings().database_url
 

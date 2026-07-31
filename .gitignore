@@ -35,3 +35,7 @@ docs/superpowers/progress/
 .DS_Store
 .idea/
 .vscode/
+.claude/
+.agents/
+.planning/
+skills-lock.json

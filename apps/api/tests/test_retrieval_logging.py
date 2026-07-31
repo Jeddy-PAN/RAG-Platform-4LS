@@ -151,6 +151,16 @@ def test_retrieval_log_detail_api_returns_ranked_chunks(
         )
         db.add_all([first, second])
         db.flush()
+        lexical_metadata = {
+            "keyword_exact_identifiers": 1,
+            "keyword_exact_ascii_terms": 2,
+            "keyword_exact_cjk_terms": 3,
+            "keyword_contained_identifiers": 4,
+            "keyword_ngram_matches": 5,
+            "keyword_retrieval_mode": "keyword",
+            "normalized_keyword_score": 1.0,
+            "pre_rerank_rank": 2,
+        }
         log = create_retrieval_log(
             db=db,
             project_id=project.id,
@@ -184,7 +194,7 @@ def test_retrieval_log_detail_api_returns_ranked_chunks(
                     keyword_score=0.4,
                     fused_score=0.6,
                     rank=1,
-                    score_metadata={"pre_rerank_rank": 2},
+                    score_metadata=lexical_metadata,
                 ),
             ],
         )
@@ -203,7 +213,7 @@ def test_retrieval_log_detail_api_returns_ranked_chunks(
     assert [chunk["rank"] for chunk in body["chunks"]] == [1, 2]
     assert body["chunks"][0]["text_preview"] == "first ranked chunk"
     assert body["chunks"][0]["document_name"] == "source.txt"
-    assert body["chunks"][0]["score_metadata"] == {"pre_rerank_rank": 2}
+    assert body["chunks"][0]["score_metadata"] == lexical_metadata
 
 
 def test_retrieval_log_detail_is_project_scoped(
