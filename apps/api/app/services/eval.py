@@ -322,6 +322,10 @@ def run_dataset(
                 question=question.question,
                 retrieved_chunks=retrieval.results,
                 recent_messages=[],
+                context_partial=retrieval.context_partial,
+                table_context=retrieval.table_context,
+                table_selection_plan=retrieval.table_selection_plan,
+                table_contexts=retrieval.table_contexts,
             )
             generation_latency_ms = int((time.perf_counter() - generation_started) * 1000)
 

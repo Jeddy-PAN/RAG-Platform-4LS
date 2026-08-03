@@ -2,14 +2,28 @@ import uuid
 
 import pytest
 
+from app.models.chunk import Chunk
+from app.models.document import Document, DocumentStatus
+from app.models.project import Project
 from app.rag.retrieval.table_expansion import (
+    ExpandedTableGroup,
     apply_context_budget,
+    apply_multi_table_context_budget,
     dedup_parent_child,
     detect_table_intent,
+    expand_selected_table_groups,
+    select_table_facets,
     select_target_table,
     summarize_table_context,
 )
-from app.rag.retrieval.types import RetrievalCandidate
+from app.rag.retrieval.types import (
+    RetrievalCandidate,
+    TableFacetOutcome,
+    TableQueryFacet,
+    TableQueryPlan,
+    TableSelectionCandidate,
+    TableSelectionPlan,
+)
 
 
 def _table_candidate(
@@ -279,3 +293,464 @@ def test_selection_returns_none_without_table_candidates() -> None:
     outcome = select_target_table("列出所有行", [paragraph])
 
     assert outcome.status == "none"
+
+
+def test_selects_one_table_per_facet() -> None:
+    first = _table_candidate(
+        "alpha-inventory.docx",
+        table_index=0,
+        vector_score=0.9,
+        headers=["ServerName"],
+    )
+    second = _table_candidate(
+        "beta-access.docx",
+        table_index=0,
+        vector_score=0.9,
+        headers=["Column 1", "Column 2"],
+    )
+    query_plan = TableQueryPlan(
+        original_query="compound",
+        is_compound=True,
+        facets=[
+            TableQueryFacet(0, "列出 alpha inventory 的 server列表"),
+            TableQueryFacet(1, "列出 beta access table 的所有行"),
+        ],
+    )
+
+    selection = select_table_facets(
+        query_plan,
+        {0: [first, second], 1: [first, second]},
+    )
+
+    assert [outcome.status for outcome in selection.outcomes] == ["selected", "selected"]
+    assert selection.outcomes[0].selected.document_id == first.document_id
+    assert selection.outcomes[1].selected.document_id == second.document_id
+    assert selection.requires_clarification is False
+
+
+def test_selection_plan_preserves_unresolved_statuses_in_facet_order() -> None:
+    first = _table_candidate("alpha-inventory.docx", headers=["ServerName"])
+    second = _table_candidate("beta-inventory.docx", headers=["ServerName"])
+    query_plan = TableQueryPlan(
+        original_query="compound",
+        is_compound=True,
+        facets=[
+            TableQueryFacet(0, "列出 alpha inventory 的所有行"),
+            TableQueryFacet(1, "server列表"),
+            TableQueryFacet(2, "列出 missing table 的所有行"),
+        ],
+    )
+
+    selection = select_table_facets(
+        query_plan,
+        {0: [first, second], 1: [first, second], 2: []},
+    )
+
+    assert [outcome.facet.index for outcome in selection.outcomes] == [0, 1, 2]
+    assert [outcome.status for outcome in selection.outcomes] == [
+        "selected",
+        "ambiguous",
+        "none",
+    ]
+    assert selection.requires_clarification is True
+    assert selection.unresolved_facet_indexes == [1, 2]
+    assert selection.can_generate is False
+
+
+def test_selection_plan_can_share_one_selected_table() -> None:
+    shared = _table_candidate("shared-inventory.docx", headers=["ServerName"])
+    query_plan = TableQueryPlan(
+        original_query="compound",
+        is_compound=True,
+        facets=[
+            TableQueryFacet(0, "列出 shared inventory 的 server列表"),
+            TableQueryFacet(1, "列出 shared inventory 的所有行"),
+        ],
+    )
+
+    selection = select_table_facets(query_plan, {0: [shared], 1: [shared]})
+
+    assert selection.can_generate is True
+    assert {
+        (outcome.selected.document_id, outcome.selected.table_index)
+        for outcome in selection.selected_outcomes
+        if outcome.selected is not None
+    } == {(shared.document_id, 0)}
+
+
+def test_selection_plan_metadata_contains_diagnostics_without_chunk_text() -> None:
+    """Serialized selection diagnostics must never include chunk text or content."""
+
+    first = _table_candidate("alpha-inventory.docx", headers=["ServerName"])
+    second = _table_candidate("beta-inventory.docx", headers=["ServerName"])
+    query_plan = TableQueryPlan(
+        original_query="compound",
+        is_compound=True,
+        facets=[
+            TableQueryFacet(0, "列出 alpha inventory 的所有行"),
+            TableQueryFacet(1, "server列表"),
+        ],
+    )
+    selection = select_table_facets(query_plan, {0: [first, second], 1: [first, second]})
+
+    metadata = selection.to_metadata()
+
+    assert set(metadata.keys()) == {
+        "original_query",
+        "can_generate",
+        "requires_clarification",
+        "unresolved_facet_indexes",
+        "facets",
+    }
+    facet_metadata = metadata["facets"]
+    assert [facet["index"] for facet in facet_metadata] == [0, 1]
+    assert [facet["status"] for facet in facet_metadata] == ["selected", "ambiguous"]
+    assert facet_metadata[0]["selected"]["document_id"] == str(first.document_id)
+    assert facet_metadata[0]["selected"]["score_breakdown"]["filename"] == 1.0
+    assert len(facet_metadata[1]["candidates"]) == 2
+
+    stack: list = [metadata]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            assert "text" not in value
+            assert "content" not in value
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+
+
+def _seed_expansion_table(
+    db,
+    project_id: uuid.UUID,
+    filename: str,
+    chunks: list[tuple[str, int, int]],
+) -> uuid.UUID:
+    """Seed one indexed table with ``table_group`` chunks of known text."""
+
+    document = Document(
+        project_id=project_id,
+        filename=filename,
+        storage_path=f"/tmp/{filename}",
+        file_size_bytes=100,
+        status=DocumentStatus.indexed,
+    )
+    db.add(document)
+    db.flush()
+    for index, (text, row_start, row_end) in enumerate(chunks):
+        db.add(
+            Chunk(
+                project_id=project_id,
+                document_id=document.id,
+                chunk_index=index,
+                text=text,
+                content_hash=str(uuid.uuid4()),
+                source_metadata={
+                    "type": "table",
+                    "table_index": 0,
+                    "table_chunk_type": "table_group",
+                    "headers": ["ServerName"],
+                    "data_row_start": row_start,
+                    "data_row_end": row_end,
+                    "total_rows": row_end,
+                },
+            )
+        )
+    return document.id
+
+
+def _selected_facet_plan(
+    first_id: uuid.UUID,
+    first_name: str,
+    second_id: uuid.UUID,
+    second_name: str,
+) -> TableSelectionPlan:
+    return TableSelectionPlan(
+        original_query="compound",
+        outcomes=[
+            TableFacetOutcome(
+                facet=TableQueryFacet(0, "first facet"),
+                status="selected",
+                selected=TableSelectionCandidate(
+                    document_id=first_id,
+                    document_name=first_name,
+                    table_index=0,
+                    score=1.0,
+                ),
+            ),
+            TableFacetOutcome(
+                facet=TableQueryFacet(1, "second facet"),
+                status="selected",
+                selected=TableSelectionCandidate(
+                    document_id=second_id,
+                    document_name=second_name,
+                    table_index=0,
+                    score=1.0,
+                ),
+            ),
+        ],
+    )
+
+
+def test_expand_selected_table_groups_separates_distinct_tables(
+    sqlite_session_factory,
+) -> None:
+    """Distinct selected identities must expand as separate groups in facet order."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"distinct-groups-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        first_id = _seed_expansion_table(
+            db, project.id, "alpha-inventory.docx", [("one two three", 1, 3)]
+        )
+        second_id = _seed_expansion_table(
+            db, project.id, "beta-access.docx", [("four five six", 1, 3)]
+        )
+        db.commit()
+        project_id = project.id
+
+    selection_plan = _selected_facet_plan(
+        first_id, "alpha-inventory.docx", second_id, "beta-access.docx"
+    )
+
+    with sqlite_session_factory() as db:
+        groups = expand_selected_table_groups(db, project_id, selection_plan)
+
+    assert len(groups) == 2
+    assert groups[0].facet_indexes == (0,)
+    assert groups[1].facet_indexes == (1,)
+
+
+def test_expand_selected_table_groups_shares_one_table_across_facets(
+    sqlite_session_factory,
+) -> None:
+    """Two facets selecting the same table must expand it once with both indexes."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"shared-group-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        shared_id = _seed_expansion_table(
+            db, project.id, "shared-inventory.docx", [("one two three", 1, 3)]
+        )
+        db.commit()
+        project_id = project.id
+
+    shared_plan = TableSelectionPlan(
+        original_query="compound",
+        outcomes=[
+            TableFacetOutcome(
+                facet=TableQueryFacet(0, "first facet"),
+                status="selected",
+                selected=TableSelectionCandidate(
+                    document_id=shared_id,
+                    document_name="shared-inventory.docx",
+                    table_index=0,
+                    score=1.0,
+                ),
+            ),
+            TableFacetOutcome(
+                facet=TableQueryFacet(1, "second facet"),
+                status="selected",
+                selected=TableSelectionCandidate(
+                    document_id=shared_id,
+                    document_name="shared-inventory.docx",
+                    table_index=0,
+                    score=1.0,
+                ),
+            ),
+        ],
+    )
+
+    with sqlite_session_factory() as db:
+        shared_groups = expand_selected_table_groups(db, project_id, shared_plan)
+
+    assert len(shared_groups) == 1
+    assert shared_groups[0].facet_indexes == (0, 1)
+    assert all(
+        candidate.score_metadata["table_facet_indexes"] == [0, 1]
+        for candidate in shared_groups[0].chunks
+    )
+
+
+def test_multi_table_context_budget_redistributes_unused_quota(
+    sqlite_session_factory,
+) -> None:
+    """Unused quota must flow to a partial table before the final rank assignment."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"budget-redistribute-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        first_id = _seed_expansion_table(
+            db,
+            project.id,
+            "alpha-inventory.docx",
+            [
+                ("one two three four five six", 1, 3),
+                ("seven eight", 4, 4),
+            ],
+        )
+        second_id = _seed_expansion_table(
+            db,
+            project.id,
+            "beta-access.docx",
+            [
+                ("nine ten", 1, 2),
+                ("eleven twelve", 3, 4),
+            ],
+        )
+        db.commit()
+        project_id = project.id
+        first_document_id = first_id
+        second_document_id = second_id
+
+    selection_plan = _selected_facet_plan(
+        first_id, "alpha-inventory.docx", second_id, "beta-access.docx"
+    )
+
+    with sqlite_session_factory() as db:
+        groups = expand_selected_table_groups(db, project_id, selection_plan)
+
+    results, contexts, partial = apply_multi_table_context_budget(groups, token_budget=12)
+
+    assert {context.selection.document_id for context in contexts} == {
+        first_document_id,
+        second_document_id,
+    }
+    assert sum(len(candidate.text.split()) for candidate in results) <= 12
+    assert [candidate.rank for candidate in results] == list(range(1, len(results) + 1))
+    assert partial == any(context.is_partial for context in contexts)
+
+
+def test_multi_table_context_budget_marks_only_truncated_table_partial(
+    sqlite_session_factory,
+) -> None:
+    """Only the table that still overflows its quota may be marked partial."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"budget-partial-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        first_id = _seed_expansion_table(
+            db,
+            project.id,
+            "alpha-inventory.docx",
+            [
+                ("a-one a-two a-three a-four a-five a-six", 1, 3),
+                (
+                    "a-seven a-eight a-nine a-ten a-eleven a-twelve "
+                    "a-thirteen a-fourteen",
+                    4,
+                    8,
+                ),
+            ],
+        )
+        second_id = _seed_expansion_table(
+            db,
+            project.id,
+            "beta-access.docx",
+            [("b-one b-two", 1, 2)],
+        )
+        db.commit()
+        project_id = project.id
+
+    selection_plan = _selected_facet_plan(
+        first_id, "alpha-inventory.docx", second_id, "beta-access.docx"
+    )
+
+    with sqlite_session_factory() as db:
+        groups = expand_selected_table_groups(db, project_id, selection_plan)
+
+    results, contexts, partial = apply_multi_table_context_budget(groups, token_budget=12)
+
+    assert partial is True
+    assert contexts[0].is_partial is True
+    assert contexts[1].is_partial is False
+    assert sum(len(candidate.text.split()) for candidate in results) <= 12
+
+
+def test_multi_table_budget_never_exceeds_global_limit_when_group_keeps_nothing(
+    sqlite_session_factory,
+) -> None:
+    """A group that initially keeps zero words must not double-count its quota."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"budget-overflow-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        first_id = _seed_expansion_table(
+            db,
+            project.id,
+            "alpha.docx",
+            [("one two three four five six seven eight nine ten", 1, 3)],
+        )
+        second_id = _seed_expansion_table(
+            db,
+            project.id,
+            "beta.docx",
+            [("b-one b-two b-three b-four b-five", 1, 5)],
+        )
+        db.commit()
+        project_id = project.id
+
+    selection_plan = _selected_facet_plan(
+        first_id, "alpha.docx", second_id, "beta.docx"
+    )
+
+    with sqlite_session_factory() as db:
+        groups = expand_selected_table_groups(db, project_id, selection_plan)
+
+    results, contexts, partial = apply_multi_table_context_budget(groups, token_budget=12)
+
+    assert sum(len(candidate.text.split()) for candidate in results) <= 12
+
+
+def test_multi_table_budget_marks_empty_expansion_partial() -> None:
+    """An empty expansion must be explicit partial, never complete coverage."""
+
+    empty_selection = TableSelectionCandidate(
+        document_id=uuid.uuid4(),
+        document_name="empty.docx",
+        table_index=0,
+    )
+    full_selection = TableSelectionCandidate(
+        document_id=uuid.uuid4(),
+        document_name="full.docx",
+        table_index=0,
+    )
+    full_chunk = RetrievalCandidate(
+        chunk_id=uuid.uuid4(),
+        document_id=full_selection.document_id,
+        document_name="full.docx",
+        chunk_index=0,
+        text="one two three",
+        source_metadata={
+            "table_index": 0,
+            "table_chunk_type": "table_group",
+            "data_row_start": 1,
+            "data_row_end": 1,
+            "total_rows": 1,
+        },
+    )
+    empty_group = ExpandedTableGroup(
+        selection=empty_selection,
+        facet_indexes=(0,),
+        chunks=[],
+    )
+    full_group = ExpandedTableGroup(
+        selection=full_selection,
+        facet_indexes=(1,),
+        chunks=[full_chunk],
+    )
+
+    results, contexts, partial = apply_multi_table_context_budget(
+        [empty_group, full_group],
+        token_budget=12,
+    )
+
+    assert contexts[0].is_partial is True
+    assert contexts[1].is_partial is False
+    assert partial is True
+    assert len(results) == 1

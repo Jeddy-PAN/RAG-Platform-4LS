@@ -6,6 +6,7 @@ the target document and table without requiring a frontend file selector.
 
 import re
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,10 +14,14 @@ from sqlalchemy.orm import Session
 from app.models.chunk import Chunk
 from app.models.document import Document
 from app.rag.retrieval.types import (
+    FacetTableContextCoverage,
     RetrievalCandidate,
     TableContextCoverage,
+    TableFacetOutcome,
+    TableQueryPlan,
     TableSelectionCandidate,
     TableSelectionOutcome,
+    TableSelectionPlan,
 )
 
 
@@ -430,6 +435,31 @@ def select_target_table(
     )
 
 
+def select_table_facets(
+    query_plan: TableQueryPlan,
+    candidates_by_facet: dict[int, list[RetrievalCandidate]],
+) -> TableSelectionPlan:
+    outcomes: list[TableFacetOutcome] = []
+    for facet in query_plan.facets:
+        result = select_target_table(
+            facet.query,
+            candidates_by_facet.get(facet.index, []),
+        )
+        outcomes.append(
+            TableFacetOutcome(
+                facet=facet,
+                status=result.status,
+                selected=result.selected,
+                candidates=result.candidates,
+                reason=result.reason,
+            )
+        )
+    return TableSelectionPlan(
+        original_query=query_plan.original_query,
+        outcomes=outcomes,
+    )
+
+
 # ── Expansion and dedup ───────────────────────────────────────────
 
 
@@ -528,6 +558,54 @@ def dedup_parent_child(chunks: list[RetrievalCandidate]) -> list[RetrievalCandid
     return kept
 
 
+# ── Multi-table expansion and shared budget ───────────────────────
+
+
+@dataclass
+class ExpandedTableGroup:
+    selection: TableSelectionCandidate
+    facet_indexes: tuple[int, ...]
+    chunks: list[RetrievalCandidate]
+
+
+def expand_selected_table_groups(
+    db: Session,
+    project_id: uuid.UUID,
+    selection_plan: TableSelectionPlan,
+) -> list[ExpandedTableGroup]:
+    """Expand each distinct selected table once and tag its facet indexes."""
+
+    identities: dict[tuple[uuid.UUID, int], list[int]] = {}
+    selected_by_identity: dict[tuple[uuid.UUID, int], TableSelectionCandidate] = {}
+    for outcome in selection_plan.selected_outcomes:
+        if outcome.selected is None:
+            continue
+        identity = (outcome.selected.document_id, outcome.selected.table_index)
+        identities.setdefault(identity, []).append(outcome.facet.index)
+        selected_by_identity.setdefault(identity, outcome.selected)
+
+    groups: list[ExpandedTableGroup] = []
+    for identity, facet_indexes in identities.items():
+        document_id, table_index = identity
+        chunks = expand_same_table(db, project_id, document_id, table_index)
+        chunks = dedup_parent_child(chunks)
+        for chunk in chunks:
+            chunk.score_metadata = {
+                **(chunk.score_metadata or {}),
+                "table_facet_indexes": sorted(facet_indexes),
+            }
+        groups.append(
+            ExpandedTableGroup(
+                selection=selected_by_identity[identity],
+                facet_indexes=tuple(sorted(facet_indexes)),
+                chunks=chunks,
+            )
+        )
+
+    groups.sort(key=lambda group: min(group.facet_indexes))
+    return groups
+
+
 # ── Context budget ────────────────────────────────────────────────
 
 
@@ -586,6 +664,64 @@ def apply_context_budget(
     for i, c in enumerate(kept, start=1):
         c.rank = i
     return kept, is_partial
+
+
+def apply_multi_table_context_budget(
+    groups: list[ExpandedTableGroup],
+    token_budget: int = DEFAULT_TABLE_CONTEXT_BUDGET,
+) -> tuple[
+    list[RetrievalCandidate],
+    list[FacetTableContextCoverage],
+    bool,
+]:
+    if not groups:
+        return [], [], False
+
+    ordered = sorted(groups, key=lambda group: min(group.facet_indexes))
+    quota = token_budget // len(ordered)
+    allocations: list[tuple[list[RetrievalCandidate], bool, int]] = []
+    for group in ordered:
+        kept, partial = apply_context_budget(group.chunks, quota)
+        allocations.append((kept, partial, quota))
+
+    used = sum(
+        len(candidate.text.split())
+        for kept, _, _ in allocations
+        for candidate in kept
+    )
+    remaining = max(token_budget - used, 0)
+    for index, group in enumerate(ordered):
+        kept, partial, allocated = allocations[index]
+        if not partial or remaining == 0:
+            continue
+        kept_words = sum(len(candidate.text.split()) for candidate in kept)
+        expanded, expanded_partial = apply_context_budget(
+            group.chunks,
+            kept_words + remaining,
+        )
+        expanded_words = sum(len(candidate.text.split()) for candidate in expanded)
+        consumed = max(expanded_words - kept_words, 0)
+        allocations[index] = (expanded, expanded_partial, kept_words + remaining)
+        remaining = max(remaining - consumed, 0)
+
+    results: list[RetrievalCandidate] = []
+    contexts: list[FacetTableContextCoverage] = []
+    for group, (kept, partial, _) in zip(ordered, allocations, strict=True):
+        results.extend(kept)
+        # An empty expansion has no representable chunk, so it is never complete.
+        if not group.chunks:
+            partial = True
+        contexts.append(
+            FacetTableContextCoverage(
+                facet_indexes=group.facet_indexes,
+                selection=group.selection,
+                coverage=summarize_table_context(kept, group.selection),
+                is_partial=partial,
+            )
+        )
+    for rank, candidate in enumerate(results, start=1):
+        candidate.rank = rank
+    return results, contexts, any(context.is_partial for context in contexts)
 
 
 def summarize_table_context(

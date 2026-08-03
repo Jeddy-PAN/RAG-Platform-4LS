@@ -20,6 +20,19 @@ class RetrievalCandidate:
 
 
 @dataclass(frozen=True)
+class TableQueryFacet:
+    index: int
+    query: str
+
+
+@dataclass(frozen=True)
+class TableQueryPlan:
+    original_query: str
+    facets: list[TableQueryFacet]
+    is_compound: bool = False
+
+
+@dataclass(frozen=True)
 class TableSelectionCandidate:
     """One table identity considered during project-wide table selection."""
 
@@ -73,6 +86,93 @@ class TableContextCoverage:
         }
 
 
+@dataclass(frozen=True)
+class FacetTableContextCoverage:
+    facet_indexes: tuple[int, ...]
+    selection: TableSelectionCandidate
+    coverage: TableContextCoverage
+    is_partial: bool = False
+
+    def to_metadata(self) -> dict:
+        return {
+            "facet_indexes": list(self.facet_indexes),
+            **self.coverage.to_metadata(),
+            "is_partial": self.is_partial,
+        }
+
+
+@dataclass(frozen=True)
+class TableFacetOutcome:
+    facet: TableQueryFacet
+    status: str
+    selected: TableSelectionCandidate | None = None
+    candidates: list[TableSelectionCandidate] = field(default_factory=list)
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class TableSelectionPlan:
+    original_query: str
+    outcomes: list[TableFacetOutcome] = field(default_factory=list)
+
+    @property
+    def requires_clarification(self) -> bool:
+        return any(outcome.status == "ambiguous" for outcome in self.outcomes)
+
+    @property
+    def selected_outcomes(self) -> list[TableFacetOutcome]:
+        return [
+            outcome
+            for outcome in self.outcomes
+            if outcome.status == "selected" and outcome.selected is not None
+        ]
+
+    @property
+    def unresolved_facet_indexes(self) -> list[int]:
+        return [
+            outcome.facet.index
+            for outcome in self.outcomes
+            if outcome.status != "selected" or outcome.selected is None
+        ]
+
+    @property
+    def can_generate(self) -> bool:
+        return bool(self.outcomes) and not self.unresolved_facet_indexes
+
+    def to_metadata(self) -> dict:
+        def serialize_candidate(candidate: TableSelectionCandidate) -> dict:
+            return {
+                **candidate.identity_metadata(),
+                "score": candidate.score,
+                "score_breakdown": candidate.score_breakdown,
+            }
+
+        return {
+            "original_query": self.original_query,
+            "can_generate": self.can_generate,
+            "requires_clarification": self.requires_clarification,
+            "unresolved_facet_indexes": self.unresolved_facet_indexes,
+            "facets": [
+                {
+                    "index": outcome.facet.index,
+                    "query": outcome.facet.query,
+                    "status": outcome.status,
+                    "reason": outcome.reason,
+                    "selected": (
+                        serialize_candidate(outcome.selected)
+                        if outcome.selected is not None
+                        else None
+                    ),
+                    "candidates": [
+                        serialize_candidate(candidate)
+                        for candidate in outcome.candidates
+                    ],
+                }
+                for outcome in self.outcomes
+            ],
+        }
+
+
 @dataclass
 class RetrievalResult:
     """Complete retrieval response assembled by the service layer."""
@@ -86,3 +186,5 @@ class RetrievalResult:
     table_selection: TableSelectionOutcome | None = None
     context_partial: bool = False
     table_context: TableContextCoverage | None = None
+    table_selection_plan: TableSelectionPlan | None = None
+    table_contexts: list[FacetTableContextCoverage] = field(default_factory=list)

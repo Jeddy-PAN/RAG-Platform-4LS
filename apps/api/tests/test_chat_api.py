@@ -1,3 +1,5 @@
+import json
+import time
 import uuid
 
 from app.models.chunk import Chunk
@@ -8,6 +10,87 @@ from app.models.project import Project
 from app.models.retrieval import RetrievalLog
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
+
+
+def _constant_embedding_provider():
+    return type(
+        "Provider",
+        (),
+        {
+            "embed_texts": lambda self, texts: [
+                [0.1] * 1024 for _ in texts
+            ]
+        },
+    )()
+
+
+def seed_compound_clarification_tables(
+    sqlite_session_factory,
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID]:
+    """Seed alpha plus two equally-scored access tables for facet clarification."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"compound-clarify-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        definitions = (
+            ("alpha-inventory.docx", ["ServerName"], ["alpha-01", "alpha-02"]),
+            ("beta-access.docx", ["Label", "State"], ["beta-01", "beta-02"]),
+            ("gamma-access.docx", ["Label", "State"], ["gamma-01", "gamma-02"]),
+        )
+        document_ids: list[uuid.UUID] = []
+        for filename, headers, values in definitions:
+            document = Document(
+                project_id=project.id,
+                filename=filename,
+                storage_path=f"/tmp/{filename}",
+                file_size_bytes=100,
+                status=DocumentStatus.indexed,
+            )
+            db.add(document)
+            db.flush()
+            document_ids.append(document.id)
+            parent_text = " | ".join(headers) + "\n" + "\n".join(values)
+            db.add(
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=0,
+                    text=parent_text,
+                    content_hash=str(uuid.uuid4()),
+                    embedding=[0.1] * 1024,
+                    source_metadata={
+                        "type": "table",
+                        "table_index": 0,
+                        "table_chunk_type": "table_group",
+                        "headers": headers,
+                        "data_row_start": 1,
+                        "data_row_end": 2,
+                        "total_rows": 2,
+                    },
+                )
+            )
+            for row_number, value in enumerate(values, start=1):
+                db.add(
+                    Chunk(
+                        project_id=project.id,
+                        document_id=document.id,
+                        chunk_index=row_number,
+                        text=f"{headers[0]}: {value}",
+                        content_hash=str(uuid.uuid4()),
+                        embedding=[0.1] * 1024,
+                        source_metadata={
+                            "type": "table_row",
+                            "table_index": 0,
+                            "table_chunk_type": "table_row",
+                            "headers": headers,
+                            "data_row": row_number,
+                            "total_rows": 2,
+                        },
+                    )
+                )
+        db.commit()
+        return project.id, document_ids[0], document_ids[1], document_ids[2]
 
 
 class FakeChatProvider:
@@ -480,3 +563,194 @@ def test_conversation_api_lists_gets_and_deletes_project_conversation(
     assert get_response.json()["messages"][0]["content"] == "Answer"
     assert delete_response.status_code == 204
     assert missing_response.status_code == 404
+
+
+COMPOUND_CLARIFY_QUERY = "列出 Alpha Inventory 表格中的所有 server和列出 access 表格的所有行"
+
+
+def test_chat_api_compound_clarification_persists_pending_facet(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """An ambiguous compound facet must persist a resumable clarification."""
+
+    project_id, alpha_id, beta_id, gamma_id = seed_compound_clarification_tables(
+        sqlite_session_factory
+    )
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: _constant_embedding_provider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: (_ for _ in ()).throw(AssertionError("provider should not be called")),
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "message": COMPOUND_CLARIFY_QUERY,
+            "retrieval": {"mode": "hybrid", "top_k": 8},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model"] == "local-table-clarification"
+    assert body["citations"] == []
+    assert "需要确认的子问题" in body["answer"]
+    assert "beta-access.docx" in body["answer"]
+    assert "gamma-access.docx" in body["answer"]
+    assert "alpha-01" not in body["answer"]
+
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(body["assistant_message_id"]))
+        plan = assistant.message_metadata["table_query_plan"]
+        assert plan["status"] == "clarification_required"
+        assert plan["original_query"] == COMPOUND_CLARIFY_QUERY
+        assert plan["pending_facet_index"] == 1
+        assert set(plan["preferred_tables_by_facet"].keys()) == {"0"}
+        assert plan["preferred_tables_by_facet"]["0"]["document_id"] == str(alpha_id)
+        assert [facet["index"] for facet in plan["selection"]["facets"]] == [0, 1]
+        assert {c["document_name"] for c in plan["candidates"]} == {
+            "alpha-inventory.docx",
+            "beta-access.docx",
+            "gamma-access.docx",
+        }
+        assert "alpha-01" not in json.dumps(plan)
+        assert "beta-01" not in json.dumps(plan)
+
+
+def test_chat_api_compound_confirmation_resumes_original_query(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Confirming the pending facet must rerun the stored query and expand both."""
+
+    project_id, alpha_id, beta_id, gamma_id = seed_compound_clarification_tables(
+        sqlite_session_factory
+    )
+    provider = FakeChatProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: _constant_embedding_provider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+
+    clarification = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "message": COMPOUND_CLARIFY_QUERY,
+            "retrieval": {"mode": "hybrid", "top_k": 8},
+        },
+    )
+    confirmation = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "conversation_id": clarification.json()["conversation_id"],
+            "message": "第一个",
+            "retrieval": {"mode": "hybrid", "top_k": 8},
+        },
+    )
+
+    assert clarification.status_code == 200
+    assert confirmation.status_code == 200
+    assert confirmation.json()["model"] == "fake-chat"
+    assert len(provider.calls) == 1
+    assert provider.calls[0][-1] == {
+        "role": "user",
+        "content": COMPOUND_CLARIFY_QUERY,
+    }
+
+    with sqlite_session_factory() as db:
+        assistant = db.get(
+            Message,
+            uuid.UUID(confirmation.json()["assistant_message_id"]),
+        )
+        plan = assistant.message_metadata["table_query_plan"]
+        assert plan["status"] == "ready"
+        assert len(plan["table_contexts"]) == 2
+        assert {context["document_name"] for context in plan["table_contexts"]} == {
+            "alpha-inventory.docx",
+            "beta-access.docx",
+        }
+
+
+def test_chat_api_compound_sequential_ambiguity(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Two ambiguous facets clarify one at a time and retain earlier picks."""
+
+    project_id, alpha_id, beta_id, gamma_id = seed_compound_clarification_tables(
+        sqlite_session_factory
+    )
+    provider = FakeChatProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: _constant_embedding_provider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+    query = "列出 access 表格的所有行和列出 state 表格的所有行"
+
+    first = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={"message": query, "retrieval": {"mode": "hybrid", "top_k": 8}},
+    )
+    assert first.status_code == 200
+    assert first.json()["model"] == "local-table-clarification"
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(first.json()["assistant_message_id"]))
+        plan = assistant.message_metadata["table_query_plan"]
+        assert plan["pending_facet_index"] == 0
+        assert plan["preferred_tables_by_facet"] == {}
+
+    # SQLite ``now()`` has second precision; space the two clarifications so the
+    # latest-assistant lookup cannot tie on identical timestamps.
+    time.sleep(1.1)
+
+    second = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "conversation_id": first.json()["conversation_id"],
+            "message": "第一个",
+            "retrieval": {"mode": "hybrid", "top_k": 8},
+        },
+    )
+    assert second.status_code == 200
+    assert second.json()["model"] == "local-table-clarification"
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(second.json()["assistant_message_id"]))
+        plan = assistant.message_metadata["table_query_plan"]
+        assert plan["pending_facet_index"] == 1
+        assert plan["preferred_tables_by_facet"]["0"]["document_id"] == str(beta_id)
+
+    third = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "conversation_id": second.json()["conversation_id"],
+            "message": "第二个",
+            "retrieval": {"mode": "hybrid", "top_k": 8},
+        },
+    )
+    assert third.status_code == 200
+    assert third.json()["model"] == "fake-chat"
+    assert len(provider.calls) == 1
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(third.json()["assistant_message_id"]))
+        plan = assistant.message_metadata["table_query_plan"]
+        assert plan["status"] == "ready"
+        assert len(plan["table_contexts"]) == 2
+        assert {context["document_name"] for context in plan["table_contexts"]} == {
+            "beta-access.docx",
+            "gamma-access.docx",
+        }

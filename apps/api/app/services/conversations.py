@@ -135,12 +135,17 @@ def list_recent_messages(
     return [{"role": message.role.value, "content": message.content} for message in messages]
 
 
-def get_pending_table_clarification(
+def get_pending_table_plan(
     db: Session,
     project_id: uuid.UUID,
     conversation_id: uuid.UUID,
 ) -> dict | None:
-    """Return candidates when the latest message asked the user to choose a table."""
+    """Return pending table clarification state from the latest assistant message.
+
+    Returns compound ``table_query_plan`` metadata when its status is
+    ``clarification_required``, otherwise falls back to the existing singular
+    ``table_selection.status == "ambiguous"`` contract.
+    """
 
     latest = db.scalar(
         select(Message)
@@ -154,13 +159,22 @@ def get_pending_table_clarification(
     )
     if latest is None:
         return None
-    table_selection = (latest.message_metadata or {}).get("table_selection")
-    if not isinstance(table_selection, dict) or table_selection.get("status") != "ambiguous":
-        return None
-    candidates = table_selection.get("candidates")
-    if not isinstance(candidates, list) or not candidates:
-        return None
-    return table_selection
+    metadata = latest.message_metadata or {}
+    table_query_plan = metadata.get("table_query_plan")
+    if (
+        isinstance(table_query_plan, dict)
+        and table_query_plan.get("status") == "clarification_required"
+    ):
+        return table_query_plan
+    table_selection = metadata.get("table_selection")
+    if (
+        isinstance(table_selection, dict)
+        and table_selection.get("status") == "ambiguous"
+        and isinstance(table_selection.get("candidates"), list)
+        and table_selection["candidates"]
+    ):
+        return table_selection
+    return None
 
 
 def list_all_conversations(

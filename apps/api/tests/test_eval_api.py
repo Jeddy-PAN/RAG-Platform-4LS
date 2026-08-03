@@ -1,9 +1,13 @@
+import uuid
+
+from app.models.chunk import Chunk
 from app.models.eval import EvalDataset, EvalQuestion, EvalResult, EvalRunStatus
 from app.models.retrieval import RetrievalLog
 import app.services.eval as eval_service
 from app.services.eval_scoring import answer_matches
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
+from tests.test_retrieval_api import DeterministicEmbeddingProvider, seed_two_named_tables
 
 
 class FakeEvalChatProvider:
@@ -664,3 +668,84 @@ def test_answer_matching_handles_real_chinese_eval_answers() -> None:
         ibm_answer,
         "Osprey 433-qubit processor; Heron modular scale-out",
     )
+
+
+class RecordingChatProvider:
+    def __init__(self) -> None:
+        self.messages: list = []
+
+    def generate_chat_completion(self, messages, temperature=0.1):
+        self.messages.append(messages)
+        return ChatProviderResult(content="synthetic answer", model="fake-eval-chat")
+
+
+def test_eval_compound_prompt_keeps_facet_and_partial_instructions(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Eval answers for compound tables must keep facet grouping and partial guards."""
+
+    project_id, alpha_id, beta_id = seed_two_named_tables(sqlite_session_factory)
+    with sqlite_session_factory() as db:
+        large_text = " ".join(f"row-{index}" for index in range(1600))
+        db.add(
+            Chunk(
+                project_id=project_id,
+                document_id=alpha_id,
+                chunk_index=10,
+                text=large_text,
+                content_hash=str(uuid.uuid4()),
+                embedding=[0.1] * 1024,
+                source_metadata={
+                    "type": "table",
+                    "table_index": 0,
+                    "table_chunk_type": "table_group",
+                    "headers": ["ServerName"],
+                    "data_row_start": 100,
+                    "data_row_end": 300,
+                    "total_rows": 300,
+                },
+            )
+        )
+        db.commit()
+
+    dataset = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets",
+        json={"name": "Compound Eval"},
+    ).json()
+    api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/questions",
+        json={
+            "question": (
+                "列出 Alpha Inventory 表格中的所有 server"
+                "和列出 Beta Access table 的所有行"
+            ),
+            "expected_document_id": str(alpha_id),
+            "should_answer": True,
+        },
+    )
+
+    recording = RecordingChatProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: DeterministicEmbeddingProvider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: recording,
+    )
+
+    run_response = api_client.post(
+        f"/api/projects/{project_id}/eval/datasets/{dataset['id']}/runs",
+        json={"retrieval_mode": "hybrid", "top_k": 8},
+    )
+
+    assert run_response.status_code == 201
+    assert recording.messages, "provider should have been called"
+    system = recording.messages[0][0]["content"]
+    assert "Facet 1" in system
+    assert "Facet 2" in system
+    assert "Answer every resolved facet" in system
+    assert "Do not state or imply that the compound answer is complete" in system
+    assert "Facet 1 is partial" in system
