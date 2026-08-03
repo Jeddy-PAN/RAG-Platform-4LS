@@ -153,6 +153,25 @@ def test_retrieval_api_returns_debug_fields(api_client, sqlite_session_factory, 
         "fused_score",
         "score_metadata",
     }
+    score_metadata = body["results"][0]["score_metadata"]
+    assert score_metadata["fusion_method"] == "weighted_rrf"
+    assert score_metadata["vector_rank"] == 1
+    assert score_metadata["keyword_rank"] == 1
+    assert score_metadata["vector_rrf_score"] > 0
+    assert score_metadata["keyword_rrf_score"] > 0
+    assert score_metadata["evidence_selection_reason"] == "ranked_fill"
+
+    with sqlite_session_factory() as db:
+        log = db.get(RetrievalLog, uuid.UUID(body["retrieval_log_id"]))
+        logged_chunk = log.chunks[0]
+
+    assert log.retrieval_metadata["evidence_selection"] == {
+        "applied": True,
+        "policy": "strong_lexical_then_ranked_fill",
+    }
+    assert logged_chunk.score_metadata["fusion_method"] == "weighted_rrf"
+    assert logged_chunk.score_metadata["vector_rank"] == 1
+    assert logged_chunk.score_metadata["keyword_rank"] == 1
 
 
 def test_full_table_query_without_table_candidates_falls_back_to_normal_top_k(
@@ -182,6 +201,67 @@ def test_full_table_query_without_table_candidates_falls_back_to_normal_top_k(
         log = db.get(RetrievalLog, uuid.UUID(response.json()["retrieval_log_id"]))
         assert log.retrieval_metadata["table_selection"]["status"] == "none"
         assert log.retrieval_metadata["expansion_applied"] is False
+
+
+def test_keyword_mode_selects_containment_from_beyond_initial_top_k(
+    api_client,
+    sqlite_session_factory,
+) -> None:
+    """Final selection must see strong lexical evidence below general-term hits."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"Keyword pool {uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        rows = [
+            (f"general-{index}.txt", "alpha beta gamma delta")
+            for index in range(4)
+        ] + [("containment.txt", "node01 standby")]
+        containment_document_id = None
+        for index, (filename, text) in enumerate(rows):
+            document = Document(
+                project_id=project.id,
+                filename=filename,
+                storage_path=f"/tmp/{filename}",
+                file_size_bytes=len(text),
+                status=DocumentStatus.indexed,
+            )
+            db.add(document)
+            db.flush()
+            if filename == "containment.txt":
+                containment_document_id = document.id
+            db.add(
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=0,
+                    text=text,
+                    content_hash=f"keyword-pool-{index}",
+                )
+            )
+        db.commit()
+        project_id = project.id
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/retrieval/query",
+        json={
+            "query": "node01-east alpha beta gamma delta",
+            "mode": "keyword",
+            "top_k": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    containment = next(
+        result for result in results
+        if result["document_id"] == str(containment_document_id)
+    )
+    assert containment["keyword_score"] == 3.0
+    assert containment["score_metadata"]["contained_identifiers"] == 1
+    assert containment["score_metadata"]["evidence_selection_reason"] == (
+        "protected_contained_identifier"
+    )
 
 
 def test_low_scoring_table_falls_back_to_stronger_normal_result(
@@ -250,6 +330,7 @@ def test_retrieval_api_can_rerank_wider_candidate_set(
     assert body["results"][0]["text_preview"] == "google sycamore quantum supremacy"
     assert body["results"][0]["score_metadata"]["reranker"] == "keyword_overlap"
     assert body["results"][0]["score_metadata"]["pre_rerank_rank"] > 1
+    assert body["results"][0]["score_metadata"]["evidence_selection_reason"] == "ranked_fill"
 
 
 def test_retrieval_api_serializes_numpy_scores(

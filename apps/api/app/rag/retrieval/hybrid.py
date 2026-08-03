@@ -12,26 +12,46 @@ _RAW_LEXICAL_METADATA = {
     "retrieval_mode",
 }
 
+DEFAULT_RRF_K = 60
 
-def normalize_scores(scores: list[float | None]) -> list[float]:
-    """Normalize present scores into 0..1 and map missing scores to zero."""
 
-    if not scores:
-        return []
+def _stable_identity(candidate: RetrievalCandidate) -> tuple:
+    return (
+        candidate.document_name or "",
+        candidate.chunk_index,
+        str(candidate.document_id),
+        str(candidate.chunk_id),
+    )
 
-    present_scores = [float(score) for score in scores if score is not None]
-    if not present_scores:
-        return [0.0 for _ in scores]
 
-    minimum = min(present_scores)
-    maximum = max(present_scores)
-    if maximum == minimum:
-        normalized_present = iter([1.0 for _ in present_scores])
-    else:
-        normalized_present = iter(
-            (score - minimum) / (maximum - minimum) for score in present_scores
+def _route_ranks(
+    candidates: list[RetrievalCandidate],
+    score_attribute: str,
+) -> dict[object, int]:
+    """Assign competition ranks from one route, sharing ranks for score ties."""
+
+    present = [
+        candidate
+        for candidate in candidates
+        if getattr(candidate, score_attribute) is not None
+    ]
+    present.sort(
+        key=lambda candidate: (
+            -float(getattr(candidate, score_attribute)),
+            *_stable_identity(candidate),
         )
-    return [0.0 if score is None else next(normalized_present) for score in scores]
+    )
+
+    ranks: dict[object, int] = {}
+    previous_score: float | None = None
+    current_rank = 0
+    for position, candidate in enumerate(present, start=1):
+        score = float(getattr(candidate, score_attribute))
+        if previous_score is None or score != previous_score:
+            current_rank = position
+            previous_score = score
+        ranks[candidate.chunk_id] = current_rank
+    return ranks
 
 
 def _namespace_keyword_metadata(meta: dict | None) -> dict:
@@ -64,8 +84,9 @@ def fuse_retrieval_results(
     top_k: int,
     vector_weight: float,
     keyword_weight: float,
+    rrf_k: int = DEFAULT_RRF_K,
 ) -> list[RetrievalCandidate]:
-    """Merge vector and keyword candidates and compute weighted fused scores.
+    """Merge vector and keyword candidates with stable weighted RRF.
 
     Lexical metadata from keyword candidates is namespaced under
     ``keyword_*`` keys for ALL keyword candidates, regardless of
@@ -96,34 +117,42 @@ def fuse_retrieval_results(
                 **candidate.score_metadata,
             }
 
-    candidates = list(merged.values())
-    vector_scores = [candidate.vector_score for candidate in candidates]
-    keyword_scores = [candidate.keyword_score for candidate in candidates]
-    normalized_vectors = normalize_scores(vector_scores)
-    normalized_keywords = normalize_scores(keyword_scores)
+    if rrf_k < 0:
+        raise ValueError("rrf_k must be non-negative")
 
-    for candidate, normalized_vector, normalized_keyword in zip(
-        candidates,
-        normalized_vectors,
-        normalized_keywords,
-        strict=True,
-    ):
-        candidate.fused_score = (
-            vector_weight * normalized_vector + keyword_weight * normalized_keyword
+    candidates = list(merged.values())
+    vector_ranks = _route_ranks(candidates, "vector_score")
+    keyword_ranks = _route_ranks(candidates, "keyword_score")
+    scale = rrf_k + 1
+
+    for candidate in candidates:
+        vector_rank = vector_ranks.get(candidate.chunk_id, 0)
+        keyword_rank = keyword_ranks.get(candidate.chunk_id, 0)
+        vector_contribution = (
+            vector_weight * scale / (rrf_k + vector_rank)
+            if vector_rank > 0
+            else 0.0
         )
+        keyword_contribution = (
+            keyword_weight * scale / (rrf_k + keyword_rank)
+            if keyword_rank > 0
+            else 0.0
+        )
+        candidate.fused_score = vector_contribution + keyword_contribution
         candidate.score_metadata = {
             **candidate.score_metadata,
-            "normalized_vector_score": normalized_vector,
-            "normalized_keyword_score": normalized_keyword,
+            "vector_rank": vector_rank,
+            "keyword_rank": keyword_rank,
+            "vector_rrf_score": vector_contribution,
+            "keyword_rrf_score": keyword_contribution,
+            "fusion_method": "weighted_rrf",
+            "fusion_rrf_k": rrf_k,
         }
 
     candidates.sort(
         key=lambda candidate: (
             -(candidate.fused_score or 0.0),
-            candidate.document_name or "",
-            candidate.chunk_index,
-            str(candidate.document_id),
-            str(candidate.chunk_id),
+            *_stable_identity(candidate),
         ),
     )
     results = candidates[:top_k]

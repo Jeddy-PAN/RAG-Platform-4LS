@@ -248,7 +248,9 @@ def _candidate_relevance(candidate: RetrievalCandidate) -> float:
     )
     absolute_relevance = max(vector_relevance, keyword_relevance)
     if candidate.fused_score is not None and (
-        "normalized_vector_score" in metadata or "normalized_keyword_score" in metadata
+        metadata.get("fusion_method") == "weighted_rrf"
+        or "vector_rrf_score" in metadata
+        or "keyword_rrf_score" in metadata
     ):
         fused_relevance = max(0.0, min(float(candidate.fused_score), 1.0))
         return max(absolute_relevance, min(fused_relevance, absolute_relevance + 0.2))

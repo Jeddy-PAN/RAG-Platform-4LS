@@ -1,21 +1,8 @@
 import uuid
 from copy import deepcopy
 
-from app.rag.retrieval.hybrid import fuse_retrieval_results, normalize_scores
+from app.rag.retrieval.hybrid import fuse_retrieval_results
 from app.rag.retrieval.types import RetrievalCandidate
-
-
-def test_normalize_scores_maps_values_to_zero_one() -> None:
-    """Score normalization should preserve ordering in a simple range."""
-
-    assert normalize_scores([2.0, 4.0, 6.0]) == [0.0, 0.5, 1.0]
-    assert normalize_scores([3.0, 3.0]) == [1.0, 1.0]
-
-
-def test_normalize_scores_distinguishes_missing_from_real_zero() -> None:
-    assert normalize_scores([None, None]) == [0.0, 0.0]
-    assert normalize_scores([0.0, None]) == [1.0, 0.0]
-    assert normalize_scores([-0.5, None]) == [1.0, 0.0]
 
 
 def test_hybrid_fusion_merges_candidates_by_chunk_id() -> None:
@@ -99,7 +86,9 @@ def test_hybrid_fusion_preserves_keyword_metadata() -> None:
     assert meta.get("keyword_exact_identifiers") == 1
     assert meta.get("keyword_exact_ascii_terms") == 2
     assert meta.get("keyword_ngram_matches") == 0
-    assert meta.get("normalized_keyword_score") is not None
+    assert meta.get("keyword_rank") == 1
+    assert meta.get("keyword_rrf_score") == 0.5
+    assert meta.get("fusion_method") == "weighted_rrf"
 
 
 def test_hybrid_fusion_does_not_mutate_input_candidates() -> None:
@@ -183,7 +172,8 @@ def test_hybrid_fusion_uses_same_complete_keyword_schema_for_both_paths() -> Non
         "keyword_contained_identifiers",
         "keyword_ngram_matches",
         "keyword_retrieval_mode",
-        "normalized_keyword_score",
+        "keyword_rank",
+        "keyword_rrf_score",
     }
     for result in results:
         metadata = result.score_metadata
@@ -245,16 +235,20 @@ def test_hybrid_fusion_marks_absent_modalities_without_inventing_evidence() -> N
         top_k=1, vector_weight=0.5, keyword_weight=0.5,
     )[0]
     assert keyword_only.vector_score is None
-    assert keyword_only.score_metadata["normalized_vector_score"] == 0.0
-    assert keyword_only.score_metadata["normalized_keyword_score"] == 1.0
+    assert keyword_only.score_metadata["vector_rank"] == 0
+    assert keyword_only.score_metadata["vector_rrf_score"] == 0.0
+    assert keyword_only.score_metadata["keyword_rank"] == 1
+    assert keyword_only.score_metadata["keyword_rrf_score"] == 0.5
 
     vector_only = fuse_retrieval_results(
         [candidate(vector_score=0.0)], [],
         top_k=1, vector_weight=0.5, keyword_weight=0.5,
     )[0]
     assert vector_only.keyword_score is None
-    assert vector_only.score_metadata["normalized_vector_score"] == 1.0
-    assert vector_only.score_metadata["normalized_keyword_score"] == 0.0
+    assert vector_only.score_metadata["vector_rank"] == 1
+    assert vector_only.score_metadata["vector_rrf_score"] == 0.5
+    assert vector_only.score_metadata["keyword_rank"] == 0
+    assert vector_only.score_metadata["keyword_rrf_score"] == 0.0
 
 
 def test_exact_keyword_evidence_stays_above_sibling_through_fusion() -> None:
@@ -278,3 +272,79 @@ def test_exact_keyword_evidence_stays_above_sibling_through_fusion() -> None:
 
     assert [result.document_name for result in results] == ["exact.txt", "sibling.txt"]
     assert results[0].fused_score > results[1].fused_score
+
+
+def test_rrf_keeps_containment_positive_when_exact_score_is_higher() -> None:
+    document_id = uuid.uuid4()
+    vector_only_id = uuid.uuid4()
+
+    def candidate(name: str, score: float) -> RetrievalCandidate:
+        evidence = "exact_identifiers" if name == "exact" else "contained_identifiers"
+        return RetrievalCandidate(
+            chunk_id=uuid.uuid4(),
+            document_id=document_id,
+            document_name=f"{name}.txt",
+            chunk_index=0,
+            text=name,
+            source_metadata={},
+            keyword_score=score,
+            score_metadata={evidence: 1},
+        )
+
+    results = fuse_retrieval_results(
+        [
+            RetrievalCandidate(
+                chunk_id=vector_only_id,
+                document_id=document_id,
+                document_name="missing.txt",
+                chunk_index=0,
+                text="missing keyword route",
+                source_metadata={},
+                vector_score=0.8,
+            )
+        ],
+        [candidate("exact", 5.0), candidate("containment", 3.0)],
+        top_k=3,
+        vector_weight=0.0,
+        keyword_weight=1.0,
+    )
+
+    by_name = {result.document_name: result for result in results}
+    assert by_name["exact.txt"].fused_score > by_name["containment.txt"].fused_score > 0.0
+    assert by_name["missing.txt"].fused_score == 0.0
+    assert by_name["containment.txt"].score_metadata["keyword_rank"] == 2
+
+
+def test_rrf_contribution_is_stable_when_lower_candidates_are_added() -> None:
+    document_id = uuid.uuid4()
+    target_id = uuid.uuid4()
+
+    def candidate(chunk_id: uuid.UUID, score: float) -> RetrievalCandidate:
+        return RetrievalCandidate(
+            chunk_id=chunk_id,
+            document_id=document_id,
+            document_name="source.txt",
+            chunk_index=0,
+            text="candidate",
+            source_metadata={},
+            keyword_score=score,
+        )
+
+    baseline = fuse_retrieval_results(
+        [], [candidate(target_id, 3.0)], top_k=10,
+        vector_weight=0.0, keyword_weight=1.0,
+    )[0]
+    expanded = fuse_retrieval_results(
+        [],
+        [candidate(target_id, 3.0), candidate(uuid.uuid4(), 1.0)],
+        top_k=10,
+        vector_weight=0.0,
+        keyword_weight=1.0,
+    )
+    expanded_target = next(result for result in expanded if result.chunk_id == target_id)
+
+    assert expanded_target.score_metadata["keyword_rank"] == 1
+    assert expanded_target.score_metadata["keyword_rrf_score"] == baseline.score_metadata[
+        "keyword_rrf_score"
+    ]
+    assert expanded_target.fused_score == baseline.fused_score

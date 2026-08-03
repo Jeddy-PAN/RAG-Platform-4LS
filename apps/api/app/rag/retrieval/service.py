@@ -11,6 +11,7 @@ from app.rag.providers.embeddings import (
     get_embedding_provider_from_settings,
 )
 from app.rag.providers.types import EmbeddingProvider
+from app.rag.retrieval.evidence_selection import select_evidence
 from app.rag.retrieval.hybrid import fuse_retrieval_results
 from app.rag.retrieval.keyword import retrieve_keyword
 from app.rag.retrieval.rerankers import KeywordOverlapReranker, rerank_candidates
@@ -85,7 +86,14 @@ def run_retrieval(
             wide_limit = initial_limit
 
         if mode == RetrievalMode.keyword:
-            results = retrieve_keyword(db, project_id, query, wide_limit, document_id=document_id)
+            keyword_limit = max(wide_limit, top_k * 3, 20)
+            results = retrieve_keyword(
+                db,
+                project_id,
+                query,
+                keyword_limit,
+                document_id=document_id,
+            )
         elif mode == RetrievalMode.vector:
             provider = embedding_provider or get_embedding_provider_from_settings()
             query_embedding = provider.embed_texts([query])[0]
@@ -170,7 +178,6 @@ def run_retrieval(
                     results, context_partial = apply_context_budget(results)
                     expansion_applied = True
                 else:
-                    results = results[:top_k]
                     selection_outcome = TableSelectionOutcome(
                         status="insufficient_score",
                         candidates=selection_outcome.candidates,
@@ -178,17 +185,23 @@ def run_retrieval(
                     )
 
             elif selection_outcome.status == "ambiguous":
-                results = results[:top_k]
+                pass
 
             else:  # "none" or "insufficient_score" — fall back to normal retrieval
-                results = results[:top_k]
+                pass
 
         # ── Final truncation ──
         if reranker_enabled:
             actual_top_k = top_k if not expansion_applied else max(top_k, len(results))
-            results = rerank_candidates(query, results, top_k=actual_top_k, provider=KeywordOverlapReranker())
-        elif not expansion_applied:
-            results = results[:top_k]
+            rerank_limit = actual_top_k if expansion_applied else len(results)
+            results = rerank_candidates(
+                query,
+                results,
+                top_k=rerank_limit,
+                provider=KeywordOverlapReranker(),
+            )
+        if not expansion_applied:
+            results = select_evidence(results, top_k=top_k)
 
         if expansion_applied and selection_outcome and selection_outcome.selected:
             table_context = summarize_table_context(results, selection_outcome.selected)
@@ -236,6 +249,10 @@ def run_retrieval(
         "context_partial": context_partial,
         "table_context": table_context.to_metadata() if table_context else None,
         "table_selection": selection_metadata,
+        "evidence_selection": {
+            "applied": not expansion_applied,
+            "policy": "strong_lexical_then_ranked_fill" if not expansion_applied else None,
+        },
     }
     log = create_retrieval_log(
         db,
