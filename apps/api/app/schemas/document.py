@@ -17,6 +17,8 @@ class DocumentRead(BaseModel):
     file_size_bytes: int
     status: DocumentStatus
     error_message: str | None
+    search_representation_version: str | None
+    needs_reindex: bool
     created_at: datetime
     updated_at: datetime
 

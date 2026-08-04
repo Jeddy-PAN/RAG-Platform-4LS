@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import json_dict_type, uuid_type
+from app.ingestion.search_representation import CURRENT_SEARCH_REPRESENTATION_VERSION
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -50,6 +51,21 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_metadata: Mapped[dict] = mapped_column(
         json_dict_type(), default=dict, nullable=False
     )
+    search_representation_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+
+    @property
+    def needs_reindex(self) -> bool:
+        """Whether an indexed document predates the current search representation.
+
+        Uploaded/processing/failed documents are never mislabeled as outdated
+        before their first successful index.
+        """
+        return (
+            self.status == DocumentStatus.indexed
+            and self.search_representation_version != CURRENT_SEARCH_REPRESENTATION_VERSION
+        )
 
     project: Mapped["Project"] = relationship(back_populates="documents")
     sections: Mapped[list["DocumentSection"]] = relationship(

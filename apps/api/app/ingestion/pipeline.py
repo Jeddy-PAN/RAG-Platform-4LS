@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.ingestion.chunker import ChunkCandidate, chunk_sections
 from app.ingestion.parsers import get_parser_for_path
+from app.ingestion.search_representation import (
+    CURRENT_SEARCH_REPRESENTATION_VERSION,
+    build_search_text,
+)
 from app.ingestion.status import mark_completed, mark_failed, mark_running
 from app.models.chunk import Chunk
 from app.models.document import (
@@ -62,8 +66,31 @@ def ingest_document_job(
         if not chunk_candidates:
             raise ValueError("Document contains no usable text chunks")
 
+        search_texts = [
+            build_search_text(
+                document_name=document.filename,
+                payload_text=candidate.text,
+                source_metadata=candidate.source_metadata,
+            )
+            for candidate in chunk_candidates
+        ]
+        if any(not text or not text.strip() for text in search_texts):
+            raise ValueError("Document produced an empty search representation")
+
         provider = embedding_provider or get_embedding_provider_from_settings()
-        vectors = provider.embed_texts([candidate.text for candidate in chunk_candidates])
+        vectors = provider.embed_texts(search_texts)
+        if len(vectors) != len(chunk_candidates):
+            raise ValueError("embedding count does not match chunk count")
+
+        previous_version = document.search_representation_version
+        target_version = CURRENT_SEARCH_REPRESENTATION_VERSION
+
+        # Serialize the active-index switch for this document so concurrent
+        # reindexes cannot leave more than one active generation. The row lock
+        # is acquired only here, after parsing and embedding.
+        db.execute(
+            select(Document.id).where(Document.id == document_id).with_for_update()
+        )
 
         db.execute(
             update(Chunk)
@@ -88,8 +115,21 @@ def ingest_document_job(
         sections_by_index = {section.section_index: section for section in section_rows}
 
         db.add_all(
-            _build_chunk_rows(project_id, document_id, chunk_candidates, vectors, sections_by_index)
+            _build_chunk_rows(
+                project_id,
+                document_id,
+                chunk_candidates,
+                vectors,
+                sections_by_index,
+                search_texts,
+            )
         )
+        document.search_representation_version = target_version
+        job.job_metadata = {
+            "target_search_representation_version": target_version,
+            "previous_search_representation_version": previous_version,
+            "final_active_chunk_count": len(chunk_candidates),
+        }
         mark_completed(db, job, document)
     except Exception as exc:
         db.rollback()
@@ -108,8 +148,9 @@ def _build_chunk_rows(
     candidates: list[ChunkCandidate],
     vectors: list[list[float]],
     sections_by_index: dict[int, DocumentSection],
+    search_texts: list[str],
 ) -> list[Chunk]:
-    """Convert chunk candidates and embeddings into ORM rows."""
+    """Convert chunk candidates, search text, and embeddings into ORM rows."""
 
     return [
         Chunk(
@@ -121,7 +162,11 @@ def _build_chunk_rows(
             token_count=candidate.token_count,
             content_hash=candidate.content_hash,
             source_metadata=candidate.source_metadata,
+            search_text=search_text,
+            search_representation_version=CURRENT_SEARCH_REPRESENTATION_VERSION,
             embedding=vector,
         )
-        for candidate, vector in zip(candidates, vectors, strict=True)
+        for candidate, vector, search_text in zip(
+            candidates, vectors, search_texts, strict=True
+        )
     ]

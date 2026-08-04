@@ -496,6 +496,7 @@ def expand_same_table(
             chunk_index=chunk.chunk_index,
             text=chunk.text,
             source_metadata=chunk.source_metadata,
+            search_text=chunk.search_text,
         )
         ct = meta.get("table_chunk_type", "")
         if ct in ("table", "table_group"):

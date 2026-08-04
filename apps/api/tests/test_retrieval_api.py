@@ -1,3 +1,4 @@
+import json
 import math
 import uuid
 
@@ -839,3 +840,56 @@ def test_compound_stale_preferred_facet_index_is_ignored(
         "selected",
         "selected",
     ]
+
+
+def test_retrieval_preview_and_log_exclude_search_text(
+    api_client,
+    sqlite_session_factory,
+) -> None:
+    """text_preview stays the payload and search_text never reaches API/logs."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"iso-preview-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="file.docx",
+            storage_path="/tmp/file.docx",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        chunk = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=0,
+            text="alpha payload row",
+            search_text=(
+                "Document: file.docx\nTable: Login\nColumns: Server\n"
+                "Content:\nalpha payload row"
+            ),
+            content_hash=str(uuid.uuid4()),
+        )
+        db.add(chunk)
+        db.commit()
+        project_id = project.id
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/retrieval/query",
+        json={"query": "alpha", "mode": "keyword", "top_k": 3},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["text_preview"] == "alpha payload row"
+    assert "Document:" not in result["text_preview"]
+    assert "search_text" not in result
+    assert "Document:" not in json.dumps(result["score_metadata"])
+
+    with sqlite_session_factory() as db:
+        log = db.get(RetrievalLog, uuid.UUID(response.json()["retrieval_log_id"]))
+        assert "search_text" not in json.dumps(log.retrieval_metadata)
+        assert "search_text" not in json.dumps(log.chunks[0].score_metadata)
+        assert "Document:" not in json.dumps(log.chunks[0].score_metadata)

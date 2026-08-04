@@ -93,3 +93,31 @@ def test_generate_answer_passes_plural_table_context(monkeypatch) -> None:
     )
     assert captured["table_selection_plan"] is selection_plan
     assert captured["table_contexts"] is table_contexts
+
+
+def test_answer_citation_quotes_original_payload() -> None:
+    """Citations quote the original chunk text even when search_text is richer."""
+
+    from app.rag.retrieval.types import RetrievalCandidate
+
+    result = generate_answer(
+        question="Which row?",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(),
+                document_id=uuid.uuid4(),
+                document_name="file.docx",
+                chunk_index=0,
+                text="alpha payload row",
+                search_text=(
+                    "Document: file.docx\nTable: Login\nContent:\nalpha payload row"
+                ),
+                source_metadata={},
+            )
+        ],
+        recent_messages=[],
+        chat_provider=FakeChatProvider(),
+    )
+
+    assert result.citation_sources
+    assert result.citation_sources[0].text == "alpha payload row"

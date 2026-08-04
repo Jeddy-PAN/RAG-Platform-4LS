@@ -42,7 +42,7 @@ def retrieve_keyword(
     strong_groups: set[int] = set()
 
     for chunk, document in rows:
-        chunk_terms = tokenize(chunk.text)
+        chunk_terms = tokenize(chunk.search_text or chunk.text)
         score, meta, group_tiers = score_chunk(query_terms, chunk_terms)
         if score <= 0:
             continue
@@ -51,6 +51,7 @@ def retrieve_keyword(
             chunk_id=chunk.id, document_id=chunk.document_id,
             document_name=document.filename, chunk_index=chunk.chunk_index,
             text=chunk.text, source_metadata=chunk.source_metadata,
+            search_text=chunk.search_text,
         )
         evidence.append((candidate, score, meta, group_tiers))
 

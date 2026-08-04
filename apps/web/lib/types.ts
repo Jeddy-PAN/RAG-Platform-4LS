@@ -23,6 +23,8 @@ export type DocumentItem = {
   file_size_bytes: number;
   status: DocumentStatus;
   error_message: string | null;
+  search_representation_version: string | null;
+  needs_reindex: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -754,3 +754,73 @@ def test_chat_api_compound_sequential_ambiguity(
             "beta-access.docx",
             "gamma-access.docx",
         }
+
+
+def test_chat_provider_receives_original_payload_only(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """The LLM prompt contains the payload and never the search labels."""
+
+    class RecordingProvider:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def generate_chat_completion(self, messages, temperature=0.1):
+            self.calls.append(messages)
+            return ChatProviderResult(content="ok", model="fake-chat")
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"chat-iso-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="file.docx",
+            storage_path="/tmp/file.docx",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        db.add(
+            Chunk(
+                project_id=project.id,
+                document_id=document.id,
+                chunk_index=0,
+                text="alpha payload row",
+                search_text=(
+                    "Document: file.docx\nTable: Login\nContent:\nalpha payload row"
+                ),
+                content_hash=str(uuid.uuid4()),
+                embedding=[0.1] * 1024,
+            )
+        )
+        db.commit()
+        project_id = project.id
+
+    provider = RecordingProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: _constant_embedding_provider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "message": "what is in the table",
+            "retrieval": {"mode": "hybrid", "top_k": 3},
+        },
+    )
+
+    assert response.status_code == 200
+    assert provider.calls
+    system = provider.calls[0][0]["content"]
+    assert "alpha payload row" in system
+    assert "Document: file.docx" not in system
+    assert "Table: Login" not in system

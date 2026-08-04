@@ -226,6 +226,11 @@ export function DashboardPanel({
                             {doc.file_size_bytes > 0 ? `${(doc.file_size_bytes / 1024).toFixed(0)} KB` : "—"}
                           </td>
                           <td style={{ textAlign: "right" }}>
+                            {doc.needs_reindex ? (
+                              <span className="file-error-inline" style={{ marginRight: 6 }}>
+                                Reindex required
+                              </span>
+                            ) : null}
                             <button
                               className="db-btn db-btn-sm"
                               onClick={() => onReindexDocument(selectedProject.id, doc)}

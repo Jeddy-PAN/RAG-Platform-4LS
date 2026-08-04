@@ -53,3 +53,30 @@ def test_reranking_can_limit_candidates_after_reordering() -> None:
 
     assert results == [strong]
     assert results[0].rank == 1
+
+
+def test_reranker_scores_search_text_and_returns_original_candidate() -> None:
+    """Reranking uses search_text for scoring but returns the original payload."""
+
+    chunk_id = uuid.uuid4()
+    candidate = RetrievalCandidate(
+        chunk_id=chunk_id,
+        document_id=uuid.uuid4(),
+        document_name="systems.docx",
+        chunk_index=0,
+        text="alpha payload row",
+        search_text="Document: systems.docx\nContent:\nalpha payload row",
+        source_metadata={},
+    )
+
+    results = rerank_candidates(
+        "systems",
+        [candidate],
+        top_k=1,
+        provider=KeywordOverlapReranker(),
+    )
+
+    assert len(results) == 1
+    assert results[0].chunk_id == chunk_id
+    assert results[0].text == "alpha payload row"
+    assert results[0].score_metadata["reranker_score"] == 1.0

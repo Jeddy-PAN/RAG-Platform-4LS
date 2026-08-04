@@ -12,6 +12,7 @@ class RetrievalCandidate:
     chunk_index: int
     text: str
     source_metadata: dict
+    search_text: str | None = None
     vector_score: float | None = None
     keyword_score: float | None = None
     fused_score: float | None = None

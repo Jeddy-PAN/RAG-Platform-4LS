@@ -428,6 +428,137 @@ def test_keyword_retrieval_empty_query_graceful(sqlite_session_factory) -> None:
     assert results == []
 
 
+# ── Round 2: search representation ─────────────────────────────────
+
+def test_keyword_retrieves_chunk_through_filename_in_search_text(
+    sqlite_session_factory,
+) -> None:
+    """A term present only in the filename can retrieve the correct chunk."""
+
+    import uuid as _uuid
+
+    from app.models.chunk import Chunk
+    from app.models.document import Document as DocModel, DocumentStatus
+    from app.models.project import Project
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"filename-search-{_uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = DocModel(
+            project_id=project.id,
+            filename="systems.docx",
+            storage_path="/tmp/systems.docx",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        chunk = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=0,
+            text="alpha payload row",
+            search_text="Document: systems.docx\nContent:\nalpha payload row",
+            content_hash=str(_uuid.uuid4()),
+        )
+        db.add(chunk)
+        db.commit()
+
+        results = retrieve_keyword(db, project.id, "systems", top_k=5)
+
+    assert len(results) == 1
+    assert results[0].chunk_id == chunk.id
+    assert results[0].text == "alpha payload row"
+
+
+def test_keyword_retrieves_docx_row_through_table_caption(
+    sqlite_session_factory,
+) -> None:
+    """A DOCX row is found via its caption even when the caption is absent."""
+
+    import uuid as _uuid
+
+    from app.models.chunk import Chunk
+    from app.models.document import Document as DocModel, DocumentStatus
+    from app.models.project import Project
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"caption-search-{_uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = DocModel(
+            project_id=project.id,
+            filename="login.docx",
+            storage_path="/tmp/login.docx",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        chunk = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=0,
+            text="Server: web-01",
+            search_text=(
+                "Document: login.docx\nTable: Production Login\n"
+                "Columns: Server\nContent:\nServer: web-01"
+            ),
+            content_hash=str(_uuid.uuid4()),
+        )
+        db.add(chunk)
+        db.commit()
+
+        results = retrieve_keyword(db, project.id, "Production Login", top_k=5)
+
+    assert len(results) == 1
+    assert results[0].chunk_id == chunk.id
+    assert results[0].text == "Server: web-01"
+
+
+def test_keyword_legacy_null_search_text_falls_back_to_payload(
+    sqlite_session_factory,
+) -> None:
+    """Legacy rows with null search_text still retrieve through the payload."""
+
+    import uuid as _uuid
+
+    from app.models.chunk import Chunk
+    from app.models.document import Document as DocModel, DocumentStatus
+    from app.models.project import Project
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"legacy-search-{_uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = DocModel(
+            project_id=project.id,
+            filename="legacy.txt",
+            storage_path="/tmp/legacy.txt",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        chunk = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=0,
+            text="alpha beta",
+            search_text=None,
+            content_hash=str(_uuid.uuid4()),
+        )
+        db.add(chunk)
+        db.commit()
+
+        results = retrieve_keyword(db, project.id, "alpha", top_k=5)
+
+    assert len(results) == 1
+    assert results[0].chunk_id == chunk.id
+    assert results[0].text == "alpha beta"
+
+
 # ── Tie-breaking ────────────────────────────────────────────────────
 
 def test_equal_score_stable_tiebreak(sqlite_session_factory) -> None:

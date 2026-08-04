@@ -29,7 +29,7 @@ class KeywordOverlapReranker:
         query_set = set(query_terms)
         scores: list[float] = []
         for candidate in candidates:
-            text_terms = set(_tokenize(candidate.text))
+            text_terms = set(_tokenize(candidate.search_text or candidate.text))
             overlap = len(query_set & text_terms)
             scores.append(overlap / len(query_set))
         return scores

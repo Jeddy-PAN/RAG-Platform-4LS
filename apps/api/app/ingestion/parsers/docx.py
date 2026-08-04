@@ -461,6 +461,7 @@ def _emit_table_sections(
                         "row": 0,
                         "headers": headers,
                         "header_source": header_source,
+                        **({"caption": caption} if caption else {}),
                     },
                 )
             )
@@ -482,6 +483,7 @@ def _emit_table_sections(
             "block_index": block_index,
             "data_row": row_index + 1,  # 1-based
             "headers": headers if headers else None,
+            **({"caption": caption} if caption else {}),
         }
         if has_nested and row_index in nested_rows:
             row_meta["nested_table_fallback"] = True
@@ -513,6 +515,7 @@ class DocxParser:
                         section_index=len(sections),
                         text=text,
                         source_metadata={
+                            "format": "docx",
                             "type": "paragraph",
                             "paragraph_start": index + 1,
                             "paragraph_end": index + 1,

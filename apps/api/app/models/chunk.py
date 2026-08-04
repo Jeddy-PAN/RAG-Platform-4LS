@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -50,6 +50,13 @@ class Chunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     embedding: Mapped[list[float] | None] = mapped_column(
         embedding_vector_type(1024), nullable=True
+    )
+    search_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    search_representation_version: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        server_default="legacy-v0",
+        default="legacy-v0",
     )
     search_vector: Mapped[str | None] = mapped_column(search_vector_type(), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")

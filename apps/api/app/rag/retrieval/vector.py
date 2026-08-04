@@ -57,6 +57,7 @@ def retrieve_vector(
                 chunk_index=chunk.chunk_index,
                 text=chunk.text,
                 source_metadata=chunk.source_metadata,
+                search_text=chunk.search_text,
                 vector_score=score,
                 fused_score=score,
                 score_metadata={"retrieval_mode": "vector"},

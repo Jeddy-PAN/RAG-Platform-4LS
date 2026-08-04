@@ -311,3 +311,34 @@ def test_compound_prompt_names_every_partial_shared_facet() -> None:
     assert "Facet 1 is partial" in system
     assert "Facet 2 is partial" in system
     assert "Do not state or imply that the compound answer is complete" in system
+
+
+def test_prompt_source_content_uses_original_payload_not_search_text() -> None:
+    """The prompt source block carries the payload, never the search labels."""
+
+    chunk_id = uuid.uuid4()
+    prompt = build_chat_prompt(
+        question="What is in the table?",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="file.docx",
+                chunk_index=0,
+                text="alpha payload row",
+                search_text=(
+                    "Document: file.docx\nTable: Login\nColumns: Server\n"
+                    "Content:\nalpha payload row"
+                ),
+                source_metadata={"page_number": 1},
+            )
+        ],
+        recent_messages=[],
+    )
+
+    system = prompt.messages[0]["content"]
+    assert "content: alpha payload row" in system
+    assert "Document: file.docx" not in system
+    assert "Table: Login" not in system
+    assert "Columns: Server" not in system
+    assert prompt.citation_map[1].text == "alpha payload row"

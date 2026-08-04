@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.ingestion.pipeline import ingest_document_job
+from app.ingestion.search_representation import CURRENT_SEARCH_REPRESENTATION_VERSION
 from app.models.chunk import Chunk
 from app.models.document import Document, DocumentStatus, IngestionJob, IngestionJobStatus
 from app.models.project import Project
@@ -55,6 +56,7 @@ def test_ingestion_failure_marks_statuses(sqlite_session_factory, tmp_path: Path
     assert job.status == IngestionJobStatus.failed
     assert document.status == DocumentStatus.failed
     assert "embedding unavailable" in (job.error_message or "")
+    assert document.search_representation_version is None
 
 
 def test_failed_reindex_preserves_existing_chunks(sqlite_session_factory, tmp_path: Path) -> None:
@@ -108,3 +110,8 @@ def test_failed_reindex_preserves_existing_chunks(sqlite_session_factory, tmp_pa
     assert final_chunk_count == original_chunk_count
     assert second_job.status == IngestionJobStatus.failed
     assert document.status == DocumentStatus.indexed
+    # The previous good index and its representation version survive the failure.
+    assert document.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION
+    active = db.query(Chunk).filter(Chunk.is_active.is_(True)).all()
+    assert len(active) == 1
+    assert active[0].search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION

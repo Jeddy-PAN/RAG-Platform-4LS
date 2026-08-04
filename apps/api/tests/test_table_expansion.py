@@ -11,6 +11,7 @@ from app.rag.retrieval.table_expansion import (
     apply_multi_table_context_budget,
     dedup_parent_child,
     detect_table_intent,
+    expand_same_table,
     expand_selected_table_groups,
     select_table_facets,
     select_target_table,
@@ -754,3 +755,55 @@ def test_multi_table_budget_marks_empty_expansion_partial() -> None:
     assert contexts[1].is_partial is False
     assert partial is True
     assert len(results) == 1
+
+
+def test_expand_same_table_retains_search_text_without_budgeting_it(
+    sqlite_session_factory,
+) -> None:
+    """Expansion carries search_text while the budget counts the original payload."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"expand-sr-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="file.docx",
+            storage_path="/tmp/file.docx",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        chunk = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=0,
+            text="one",
+            search_text=(
+                "Document: file.docx\nTable: Login\nColumns: Server\nContent:\none"
+            ),
+            content_hash=str(uuid.uuid4()),
+            source_metadata={
+                "table_index": 0,
+                "table_chunk_type": "table",
+                "data_row_start": 1,
+                "data_row_end": 1,
+                "total_rows": 1,
+            },
+        )
+        db.add(chunk)
+        db.commit()
+        project_id = project.id
+        document_id = document.id
+
+    with sqlite_session_factory() as db:
+        expanded = expand_same_table(db, project_id, document_id, 0)
+        kept, partial = apply_context_budget(expanded, token_budget=1)
+
+    assert len(expanded) == 1
+    assert expanded[0].search_text is not None
+    assert "Document: file.docx" in expanded[0].search_text
+    assert kept == [expanded[0]]
+    assert partial is False
+    assert kept[0].text == "one"

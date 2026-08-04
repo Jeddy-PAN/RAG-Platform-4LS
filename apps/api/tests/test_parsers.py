@@ -61,6 +61,7 @@ def test_docx_parser_returns_non_empty_paragraphs(tmp_path: Path) -> None:
         "Beta paragraph",
     ]
     assert sections[0].source_metadata == {
+        "format": "docx",
         "type": "paragraph",
         "paragraph_start": 1,
         "paragraph_end": 1,
@@ -194,6 +195,46 @@ def test_docx_parser_merged_caption_via_real_merge(tmp_path: Path) -> None:
     assert "table" in types
     assert "table_header" in types
     assert types.count("table_row") >= 1
+
+
+def test_docx_parser_propagates_caption_and_keeps_payloads(tmp_path: Path) -> None:
+    """Captions propagate to header/row metadata without changing payload text."""
+
+    from docx import Document as DocxDocument
+
+    path = tmp_path / "caption_propagation.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("Ordinary intro paragraph")
+    table = doc.add_table(rows=3, cols=3)
+    table.cell(0, 0).merge(table.cell(0, 2))
+    table.cell(0, 0).text = "Server Configuration Table"
+    table.cell(1, 0).text = "Server"
+    table.cell(1, 1).text = "IP"
+    table.cell(1, 2).text = "Status"
+    table.cell(2, 0).text = "web-01"
+    table.cell(2, 1).text = "10.0.0.1"
+    table.cell(2, 2).text = "active"
+    doc.save(path)
+
+    sections = get_parser_for_path(path).parse(path)
+
+    paragraph_section = next(
+        s for s in sections if s.source_metadata["type"] == "paragraph"
+    )
+    assert paragraph_section.text == "Ordinary intro paragraph"
+    assert paragraph_section.source_metadata["format"] == "docx"
+
+    header_section = next(
+        s for s in sections if s.source_metadata["type"] == "table_header"
+    )
+    assert header_section.source_metadata["caption"] == "Server Configuration Table"
+
+    row_sections = [s for s in sections if s.source_metadata["type"] == "table_row"]
+    assert row_sections
+    for row in row_sections:
+        assert row.source_metadata["caption"] == "Server Configuration Table"
+        assert "Server Configuration Table" not in row.text
+    assert "web-01" in row_sections[0].text
 
 
 def test_docx_parser_merged_caption_row(tmp_path: Path) -> None:

@@ -5,7 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.document import Document, DocumentStatus, IngestionJob
+from app.ingestion.search_representation import CURRENT_SEARCH_REPRESENTATION_VERSION
+from app.models.document import (
+    Document,
+    DocumentStatus,
+    IngestionJob,
+    IngestionJobStatus,
+)
 from app.models.project import Project
 from app.schemas.document import DocumentUploadRead
 from app.services.ingestion_jobs import create_ingestion_job, mark_ingestion_job_failed
@@ -104,6 +110,10 @@ def upload_document(
     write_upload_bytes(storage_path, content)
 
     ingestion_job = create_ingestion_job(db, project_id, document.id)
+    # Commit the queued job before dispatch so an RQ worker can always read it.
+    db.commit()
+    db.refresh(document)
+    db.refresh(ingestion_job)
     try:
         enqueue_ingestion_job(
             job_id=str(ingestion_job.id),
@@ -111,6 +121,8 @@ def upload_document(
             document_id=str(document.id),
         )
     except Exception as exc:
+        # The job is already committed as queued; mark it failed in a new
+        # transaction so the failure is observable.
         mark_ingestion_job_failed(db, ingestion_job, str(exc))
         db.commit()
         raise HTTPException(
@@ -118,9 +130,6 @@ def upload_document(
             detail="Ingestion queue unavailable",
         ) from exc
 
-    db.commit()
-    db.refresh(document)
-    db.refresh(ingestion_job)
     return DocumentUploadRead(document=document, ingestion_job=ingestion_job)
 
 
@@ -160,10 +169,43 @@ def request_reindex(
     project_id: uuid.UUID,
     document_id: uuid.UUID,
 ) -> IngestionJob:
-    """Create and enqueue a fresh ingestion job for an existing document."""
+    """Create and enqueue a fresh ingestion job for an existing document.
+
+    Returns the existing queued/running job when one is already pending for the
+    same project/document so repeated requests never enqueue a duplicate worker
+    task. Completed jobs do not block a fresh reindex.
+    """
 
     document = get_project_document(db, project_id, document_id)
+    # Serialize the check-then-create for this document: lock the document row
+    # before querying pending jobs and keep the lock until the new job row is
+    # committed, so two concurrent requests cannot both enqueue a duplicate.
+    db.execute(
+        select(Document.id).where(Document.id == document_id).with_for_update()
+    )
+    existing = db.scalar(
+        select(IngestionJob)
+        .where(
+            IngestionJob.project_id == project_id,
+            IngestionJob.document_id == document_id,
+            IngestionJob.status.in_(
+                [IngestionJobStatus.queued, IngestionJobStatus.running]
+            ),
+        )
+        .order_by(IngestionJob.created_at.desc())
+        .limit(1)
+    )
+    if existing is not None:
+        return existing
     ingestion_job = create_ingestion_job(db, project_id, document.id)
+    ingestion_job.job_metadata = {
+        "target_search_representation_version": CURRENT_SEARCH_REPRESENTATION_VERSION
+    }
+    # Commit the queued job before dispatch so an RQ worker can always read it in
+    # its own session. The commit also releases the document row lock, after
+    # which a concurrent request observes and reuses this queued job.
+    db.commit()
+    db.refresh(ingestion_job)
     try:
         enqueue_ingestion_job(
             job_id=str(ingestion_job.id),
@@ -171,12 +213,12 @@ def request_reindex(
             document_id=str(document.id),
         )
     except Exception as exc:
+        # The job is already committed as queued; mark it failed in a new
+        # transaction so the failure is observable.
         mark_ingestion_job_failed(db, ingestion_job, str(exc))
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Ingestion queue unavailable",
         ) from exc
-    db.commit()
-    db.refresh(ingestion_job)
     return ingestion_job
