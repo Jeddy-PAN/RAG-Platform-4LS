@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from app.rag.prompting import PromptSource, build_chat_prompt
 from app.rag.providers.chat import OpenAIChatProvider
 from app.rag.providers.types import ChatProvider
+from app.rag.retrieval.evidence_types import EvidenceSelectionPlan
 from app.rag.retrieval.types import (
     FacetTableContextCoverage,
     RetrievalCandidate,
@@ -35,6 +36,7 @@ def generate_answer(
     table_context: TableContextCoverage | None = None,
     table_selection_plan: TableSelectionPlan | None = None,
     table_contexts: list[FacetTableContextCoverage] | None = None,
+    evidence_selection_plan: EvidenceSelectionPlan | None = None,
 ) -> AnswerResult:
     """Generate a grounded answer or a local no-answer refusal."""
 
@@ -46,6 +48,7 @@ def generate_answer(
         table_context=table_context,
         table_selection_plan=table_selection_plan,
         table_contexts=table_contexts,
+        evidence_selection_plan=evidence_selection_plan,
     )
     if prompt.should_refuse:
         return AnswerResult(answer=NO_ANSWER_MESSAGE, model="local-refusal")

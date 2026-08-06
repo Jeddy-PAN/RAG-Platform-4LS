@@ -11,6 +11,7 @@ from app.models.retrieval import RetrievalMode
 from app.rag.answering import AnswerResult, generate_answer
 from app.rag.citations import persist_citations
 from app.rag.providers.chat import ChatProviderError
+from app.rag.providers.round4b import get_round4b_providers
 from app.rag.retrieval.service import run_retrieval
 from app.rag.retrieval.types import TableFacetOutcome, TableSelectionOutcome
 from app.services.conversations import (
@@ -250,6 +251,7 @@ def send_chat_message(
     )
     db.commit()
 
+    round4b_providers = get_round4b_providers()
     retrieval = run_retrieval(
         db,
         project_id=project_id,
@@ -267,6 +269,8 @@ def send_chat_message(
         preferred_table_index=(
             legacy_preferred_table[1] if legacy_preferred_table else None
         ),
+        planner_provider=round4b_providers.planner_provider,
+        evidence_assessor=round4b_providers.evidence_assessor,
     )
     generation_started = time.perf_counter()
     table_query_plan_metadata = None
@@ -320,6 +324,7 @@ def send_chat_message(
                 table_context=retrieval.table_context,
                 table_selection_plan=retrieval.table_selection_plan,
                 table_contexts=retrieval.table_contexts,
+                evidence_selection_plan=retrieval.evidence_selection_plan,
             )
     except ChatProviderError as exc:
         raise HTTPException(
@@ -355,6 +360,10 @@ def send_chat_message(
             message_metadata["table_selection"] = selection_metadata
         if retrieval.table_context:
             message_metadata["table_context"] = retrieval.table_context.to_metadata()
+    if retrieval.evidence_selection_plan is not None:
+        message_metadata["evidence_selection_plan"] = (
+            retrieval.evidence_selection_plan.to_metadata()
+        )
 
     assistant_message = create_message(
         db,

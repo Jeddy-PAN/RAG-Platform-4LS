@@ -1,6 +1,11 @@
 from dataclasses import dataclass, field
 import uuid
 
+from app.rag.retrieval.evidence_types import (
+    EvidenceQueryPlan,
+    EvidenceSelectionPlan,
+)
+
 
 @dataclass
 class RetrievalCandidate:
@@ -189,3 +194,5 @@ class RetrievalResult:
     table_context: TableContextCoverage | None = None
     table_selection_plan: TableSelectionPlan | None = None
     table_contexts: list[FacetTableContextCoverage] = field(default_factory=list)
+    evidence_query_plan: EvidenceQueryPlan | None = None
+    evidence_selection_plan: EvidenceSelectionPlan | None = None

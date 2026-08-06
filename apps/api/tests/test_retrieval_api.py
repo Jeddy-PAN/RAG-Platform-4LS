@@ -451,6 +451,48 @@ def test_retrieval_api_serializes_numpy_scores(
     assert isinstance(result["score_metadata"]["normalized_vector_score"], float)
 
 
+def test_retrieval_api_injects_round4b_provider_bundle(api_client, monkeypatch):
+    calls = []
+
+    class Planner:
+        def plan(self, question, max_facets=4):
+            calls.append(question)
+            return object()
+
+    planner = Planner()
+    assessor = object()
+    monkeypatch.setattr(
+        "app.api.retrieval.get_round4b_providers",
+        lambda: type(
+            "Bundle",
+            (),
+            {"planner_provider": planner, "evidence_assessor": assessor},
+        )(),
+    )
+
+    def fake_run_retrieval(*args, **kwargs):
+        assert kwargs["planner_provider"] is planner
+        assert kwargs["evidence_assessor"] is assessor
+        kwargs["planner_provider"].plan(kwargs["query"])
+        return RetrievalResult(
+            query=kwargs["query"],
+            mode=kwargs["mode"].value,
+            top_k=kwargs["top_k"],
+            latency_ms=1,
+            retrieval_log_id=uuid.uuid4(),
+            results=[],
+        )
+
+    monkeypatch.setattr("app.api.retrieval.run_retrieval", fake_run_retrieval)
+    response = api_client.post(
+        f"/api/projects/{uuid.uuid4()}/retrieval/query",
+        json={"query": "请查找 entity-17 的属性甲和属性乙", "mode": "keyword", "top_k": 2},
+    )
+
+    assert response.status_code == 200
+    assert calls == ["请查找 entity-17 的属性甲和属性乙"]
+
+
 def test_vector_retrieval_embeds_query_once(api_client, sqlite_session_factory, monkeypatch):
     """Vector retrieval should embed the query exactly once."""
 

@@ -1,6 +1,12 @@
 import uuid
 
 from app.rag.prompting import build_chat_prompt
+from app.rag.retrieval.evidence_types import (
+    EvidenceFacet,
+    EvidenceQueryPlan,
+    EvidenceSelectionPlan,
+    FacetEvidenceCoverage,
+)
 from app.rag.retrieval.types import (
     FacetTableContextCoverage,
     RetrievalCandidate,
@@ -342,3 +348,239 @@ def test_prompt_source_content_uses_original_payload_not_search_text() -> None:
     assert "Table: Login" not in system
     assert "Columns: Server" not in system
     assert prompt.citation_map[1].text == "alpha payload row"
+
+
+def _evidence_plan(*queries: str) -> EvidenceQueryPlan:
+    return EvidenceQueryPlan(
+        original_query="compound fact question",
+        facets=tuple(
+            EvidenceFacet(index=index, query=query)
+            for index, query in enumerate(queries)
+        ),
+        route="deterministic",
+        confidence=0.6,
+    )
+
+
+def _evidence_selection(plan, coverage) -> EvidenceSelectionPlan:
+    return EvidenceSelectionPlan(query_plan=plan, coverage=tuple(coverage))
+
+
+def test_evidence_prompt_maps_facets_to_selected_sources() -> None:
+    from app.rag.retrieval.evidence_types import FacetEvidenceCoverage
+
+    first_chunk_id = uuid.uuid4()
+    second_chunk_id = uuid.uuid4()
+    plan = _evidence_plan("a node-17", "b node-17")
+    selection = _evidence_selection(
+        plan,
+        [
+            FacetEvidenceCoverage(
+                facet_index=0,
+                status="covered",
+                selected_chunk_ids=(first_chunk_id,),
+            ),
+            FacetEvidenceCoverage(
+                facet_index=1,
+                status="covered",
+                selected_chunk_ids=(second_chunk_id,),
+            ),
+        ],
+    )
+    prompt = build_chat_prompt(
+        "compound fact question",
+        [
+            RetrievalCandidate(
+                chunk_id=first_chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="a.txt",
+                chunk_index=0,
+                text="a node-17",
+                source_metadata={},
+            ),
+            RetrievalCandidate(
+                chunk_id=second_chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="b.txt",
+                chunk_index=0,
+                text="b node-17",
+                source_metadata={},
+            ),
+        ],
+        [],
+        evidence_selection_plan=selection,
+    )
+
+    system = prompt.messages[0]["content"]
+    assert "Facet 1 (covered): [Source 1]" in system
+    assert "Facet 2 (covered): [Source 2]" in system
+
+
+def test_evidence_prompt_marks_unresolved_facet() -> None:
+    from app.rag.retrieval.evidence_types import FacetEvidenceCoverage
+
+    first_chunk_id = uuid.uuid4()
+    plan = _evidence_plan("a node-17", "b node-17")
+    selection = _evidence_selection(
+        plan,
+        [
+            FacetEvidenceCoverage(
+                facet_index=0,
+                status="covered",
+                selected_chunk_ids=(first_chunk_id,),
+            ),
+            FacetEvidenceCoverage(facet_index=1, status="unresolved"),
+        ],
+    )
+    prompt = build_chat_prompt(
+        "compound fact question",
+        [
+            RetrievalCandidate(
+                chunk_id=first_chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="a.txt",
+                chunk_index=0,
+                text="a node-17",
+                source_metadata={},
+            )
+        ],
+        [],
+        evidence_selection_plan=selection,
+    )
+
+    system = prompt.messages[0]["content"]
+    assert "Facet 1 (covered)" in system
+    assert "Facet 2 (unresolved)" in system
+    assert "not found in the selected knowledge base" in system
+
+
+def test_evidence_prompt_forbids_budget_limited_conflict_source_for_unresolved_facet() -> None:
+    from app.rag.retrieval.evidence_types import FacetEvidenceCoverage
+
+    shared_chunk_id = uuid.uuid4()
+    covered_chunk_id = uuid.uuid4()
+    plan = _evidence_plan("a node-17", "b node-17")
+    selection = _evidence_selection(
+        plan,
+        [
+            FacetEvidenceCoverage(
+                facet_index=0,
+                status="unresolved",
+                selected_chunk_ids=(shared_chunk_id,),
+                reason="budget_exhausted",
+            ),
+            FacetEvidenceCoverage(
+                facet_index=1,
+                status="covered",
+                selected_chunk_ids=(covered_chunk_id,),
+            ),
+        ],
+    )
+    prompt = build_chat_prompt(
+        "compound fact question",
+        [
+            RetrievalCandidate(
+                chunk_id=shared_chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="shared.txt",
+                chunk_index=0,
+                text="a node-17 claim; b node-17 claim",
+                source_metadata={},
+                score_metadata={"evidence_facet_indexes": [0, 1]},
+            ),
+            RetrievalCandidate(
+                chunk_id=covered_chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="covered.txt",
+                chunk_index=0,
+                text="b node-17 confirmed",
+                source_metadata={},
+                score_metadata={"evidence_facet_indexes": [1]},
+            ),
+        ],
+        [],
+        evidence_selection_plan=selection,
+    )
+
+    system = prompt.messages[0]["content"]
+    assert "Facet 1 (unresolved)" in system
+    assert "Do not use or cite any source for this facet" in system
+    assert "Facet 2 (covered): [Source 2]" in system
+
+
+def test_evidence_prompt_all_unresolved_refuses() -> None:
+    from app.rag.retrieval.evidence_types import FacetEvidenceCoverage
+
+    plan = _evidence_plan("a node-17", "b node-17")
+    selection = _evidence_selection(
+        plan,
+        [
+            FacetEvidenceCoverage(facet_index=0, status="unresolved"),
+            FacetEvidenceCoverage(facet_index=1, status="unresolved"),
+        ],
+    )
+    prompt = build_chat_prompt(
+        "compound fact question",
+        [
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(),
+                document_id=uuid.uuid4(),
+                document_name="noise.txt",
+                chunk_index=0,
+                text="unrelated",
+                source_metadata={},
+            )
+        ],
+        [],
+        evidence_selection_plan=selection,
+    )
+
+    assert prompt.should_refuse is True
+
+
+def test_evidence_prompt_separates_conflict_groups() -> None:
+    from app.rag.retrieval.evidence_types import FacetEvidenceCoverage
+
+    first_chunk_id = uuid.uuid4()
+    second_chunk_id = uuid.uuid4()
+    plan = _evidence_plan("password node-17")
+    selection = _evidence_selection(
+        plan,
+        [
+            FacetEvidenceCoverage(
+                facet_index=0,
+                status="conflicting",
+                selected_chunk_ids=(first_chunk_id, second_chunk_id),
+                conflict_groups=((first_chunk_id,), (second_chunk_id,)),
+            ),
+        ],
+    )
+    prompt = build_chat_prompt(
+        "find the password for node-17",
+        [
+            RetrievalCandidate(
+                chunk_id=first_chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="p1.txt",
+                chunk_index=0,
+                text="password node-17 alpha",
+                source_metadata={},
+            ),
+            RetrievalCandidate(
+                chunk_id=second_chunk_id,
+                document_id=uuid.uuid4(),
+                document_name="p2.txt",
+                chunk_index=0,
+                text="password node-17 beta",
+                source_metadata={},
+            ),
+        ],
+        [],
+        evidence_selection_plan=selection,
+    )
+
+    system = prompt.messages[0]["content"]
+    assert "conflicting" in system
+    assert "[Source 1]" in system
+    assert "[Source 2]" in system
+    assert "Never merge values or pick a winner" in system

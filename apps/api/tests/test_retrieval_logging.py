@@ -242,3 +242,168 @@ def test_retrieval_log_detail_is_project_scoped(
     response = api_client.get(f"/api/projects/{other_project_id}/retrieval/logs/{log_id}")
 
     assert response.status_code == 404
+
+
+def test_evidence_plan_log_metadata_is_redacted_and_populated(
+    sqlite_session_factory,
+) -> None:
+    """Generic evidence-facet logs carry redacted plan and coverage metadata."""
+
+    import json
+
+    from app.models.conversation import Message  # noqa: F401 (model import)
+    from app.rag.retrieval.service import run_retrieval
+    from app.rag.retrieval.evidence_types import EvidenceSelectionPlan
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"evidence-log-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document_ids: list[uuid.UUID] = []
+        for filename, text in (
+            ("logins.docx", "username node-17 alice"),
+            ("passwords.docx", "password node-17 secret"),
+        ):
+            document = Document(
+                project_id=project.id,
+                filename=filename,
+                storage_path=f"/tmp/{filename}",
+                file_size_bytes=100,
+                status=DocumentStatus.indexed,
+            )
+            db.add(document)
+            db.flush()
+            document_ids.append(document.id)
+            db.add(
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=0,
+                    text=text,
+                    content_hash=str(uuid.uuid4()),
+                )
+            )
+        db.commit()
+        project_id = project.id
+
+        result = run_retrieval(
+            db,
+            project_id=project_id,
+            query="find the username and password for node-17",
+            mode=RetrievalMode.keyword,
+            top_k=8,
+        )
+        log = db.get(RetrievalLog, result.retrieval_log_id)
+
+    metadata = log.retrieval_metadata
+    plan = metadata["evidence_query_plan"]
+    assert plan["facet_count"] == 2
+    assert plan["facet_indexes"] == [0, 1]
+    assert plan["route"] == "deterministic"
+
+    selection = metadata["evidence_selection_plan"]
+    assert len(selection["coverage"]) == 2
+    assert all(item["status"] in ("covered", "unresolved", "conflicting") for item in selection["coverage"])
+    selected_ids = {
+        chunk_id
+        for item in selection["coverage"]
+        for chunk_id in item["selected_chunk_ids"]
+    }
+    assert selected_ids == {str(candidate.chunk_id) for candidate in result.results}
+
+    serialized = json.dumps(metadata)
+    assert "node-17" not in serialized
+    assert "username" not in serialized
+    assert "password" not in serialized
+    assert "alice" not in serialized
+    assert "secret" not in serialized
+    assert "evidence_planner_latency_ms" in metadata
+    assert metadata["evidence_planner_called"] is False
+    assert metadata["evidence_assessor_called"] is False
+    assert metadata["evidence_assessor_call_count"] == 0
+    assert "evidence_selection_latency_ms" in metadata
+
+
+def test_ordinary_single_fact_log_shape_is_backward_compatible(
+    sqlite_session_factory,
+) -> None:
+    """Single-fact ordinary queries keep the existing log keys plus the plan."""
+
+    from app.rag.retrieval.service import run_retrieval
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"single-log-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="source.txt",
+            storage_path="/tmp/source.txt",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        db.add(
+            Chunk(
+                project_id=project.id,
+                document_id=document.id,
+                chunk_index=0,
+                text="escalation policy",
+                content_hash=str(uuid.uuid4()),
+            )
+        )
+        db.commit()
+        project_id = project.id
+
+        result = run_retrieval(
+            db,
+            project_id=project_id,
+            query="what is escalation",
+            mode=RetrievalMode.keyword,
+            top_k=3,
+        )
+        log = db.get(RetrievalLog, result.retrieval_log_id)
+
+    metadata = log.retrieval_metadata
+    assert metadata["table_selection"] is None
+    assert metadata["table_context"] is None
+    assert metadata["evidence_selection"]["applied"] is True
+    assert metadata["evidence_query_plan"]["facet_count"] == 1
+    assert metadata["evidence_query_plan"]["facet_indexes"] == [0]
+    assert "evidence_selection_plan" not in metadata
+
+
+def test_table_compound_log_shape_is_backward_compatible(
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Round 4A table logs remain unchanged and add no generic plan metadata."""
+
+    import tests.test_retrieval_api as retrieval_api
+    from app.rag.retrieval.service import run_retrieval
+
+    project_id, first_id, second_id = retrieval_api.seed_two_named_tables(
+        sqlite_session_factory
+    )
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: retrieval_api.DeterministicEmbeddingProvider(),
+    )
+    with sqlite_session_factory() as db:
+        result = run_retrieval(
+            db,
+            project_id=project_id,
+            query=(
+                "列出 Alpha Inventory 表格中的所有 server"
+                "和列出 Beta Access table 的所有行"
+            ),
+            mode=RetrievalMode.hybrid,
+            top_k=8,
+        )
+        log = db.get(RetrievalLog, result.retrieval_log_id)
+
+    metadata = log.retrieval_metadata
+    assert "table_query_plan" in metadata
+    assert "evidence_query_plan" not in metadata
+    assert metadata["table_query_plan"]["facet_count"] == 2

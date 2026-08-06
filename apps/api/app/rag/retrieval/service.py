@@ -10,8 +10,14 @@ from app.rag.providers.embeddings import (
     EmbeddingProviderError,
     get_embedding_provider_from_settings,
 )
-from app.rag.providers.types import EmbeddingProvider
-from app.rag.retrieval.evidence_selection import select_evidence
+from app.rag.providers.types import (
+    EmbeddingProvider,
+    FacetEvidenceAssessor,
+    QueryFacetPlannerProvider,
+)
+from app.rag.retrieval.evidence_facets import plan_evidence_facets
+from app.rag.retrieval.evidence_selection import select_evidence, select_evidence_facets
+from app.rag.retrieval.evidence_types import EvidenceQueryPlan, EvidenceSelectionPlan
 from app.rag.retrieval.hybrid import fuse_retrieval_results
 from app.rag.retrieval.keyword import retrieve_keyword
 from app.rag.retrieval.query_facets import plan_table_query
@@ -87,6 +93,61 @@ def _retrieve_query_candidates(
     )
 
 
+def _retrieve_facet_candidates(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    evidence_plan: EvidenceQueryPlan,
+    mode: RetrievalMode,
+    candidate_limit: int,
+    vector_weight: float,
+    keyword_weight: float,
+    similarity_threshold: float,
+    document_id: uuid.UUID | None,
+    embedding_provider: EmbeddingProvider | None,
+) -> dict[int, list[RetrievalCandidate]]:
+    """Retrieve ordinary candidates independently for every evidence facet.
+
+    In vector/hybrid modes all facet queries are embedded in one batched call;
+    keyword mode never requests embeddings. Project and optional document scope
+    are applied to every route.
+    """
+    facet_queries = [facet.query for facet in evidence_plan.facets]
+    if mode == RetrievalMode.keyword:
+        facet_embeddings: list[list[float] | None] = [None] * len(facet_queries)
+    else:
+        provider = embedding_provider or get_embedding_provider_from_settings()
+        facet_embeddings = provider.embed_texts(facet_queries)
+
+    candidates_by_facet: dict[int, list[RetrievalCandidate]] = {}
+    for facet, facet_embedding in zip(evidence_plan.facets, facet_embeddings):
+        candidates_by_facet[facet.index] = _retrieve_query_candidates(
+            db,
+            project_id=project_id,
+            query=facet.query,
+            mode=mode,
+            candidate_limit=candidate_limit,
+            vector_weight=vector_weight,
+            keyword_weight=keyword_weight,
+            similarity_threshold=similarity_threshold,
+            document_id=document_id,
+            query_embedding=facet_embedding,
+        )
+    return candidates_by_facet
+
+
+class _CountingFacetAssessor:
+    """Count bounded assessor calls without recording request or response bodies."""
+
+    def __init__(self, assessor: FacetEvidenceAssessor) -> None:
+        self.assessor = assessor
+        self.calls = 0
+
+    def assess(self, plan, facet_index: int, candidates):
+        self.calls += 1
+        return self.assessor.assess(plan, facet_index, candidates)
+
+
 def run_retrieval(
     db: Session,
     project_id: uuid.UUID,
@@ -103,6 +164,8 @@ def run_retrieval(
     preferred_document_id: uuid.UUID | None = None,
     preferred_table_index: int | None = None,
     preferred_tables_by_facet: dict[int, tuple[uuid.UUID, int]] | None = None,
+    planner_provider: QueryFacetPlannerProvider | None = None,
+    evidence_assessor: FacetEvidenceAssessor | None = None,
 ) -> RetrievalResult:
     """Run project-scoped retrieval and persist debug logs.
 
@@ -113,6 +176,7 @@ def run_retrieval(
 
     Compound full-table queries are split into conservative facets, retrieved
     and selected per facet, and expanded under one shared context budget.
+    Generic entity/attribute questions use the Round 4B evidence-facet route.
     """
 
     if db.get(Project, project_id) is None:
@@ -132,12 +196,33 @@ def run_retrieval(
 
     started = time.perf_counter()
     query_plan = plan_table_query(query)
+    evidence_plan: EvidenceQueryPlan | None = None
+    planner_latency_ms = 0
+    planner_called = False
+    evidence_selection_latency_ms = 0
+    evidence_assessor_call_count = 0
+    counting_assessor: _CountingFacetAssessor | None = None
+    if not query_plan.is_compound:
+        planner_started = time.perf_counter()
+        evidence_plan = plan_evidence_facets(
+            query,
+            planner_provider=planner_provider,
+        )
+        planner_latency_ms = int((time.perf_counter() - planner_started) * 1000)
+        planner_called = (
+            planner_provider is not None
+            and evidence_plan.route in {"structured", "fallback"}
+            and evidence_plan.fallback_reason
+            not in {"empty_question", "oversized_question", "full_table_route", "planner_unavailable"}
+        )
     table_intent = False
     is_full_table = False
     expansion_applied = False
     selection_outcome: TableSelectionOutcome | None = None
     selection_plan: TableSelectionPlan | None = None
     table_contexts: list[FacetTableContextCoverage] = []
+    evidence_selection_plan: EvidenceSelectionPlan | None = None
+    evidence_selected = False
     context_partial = False
     table_context: TableContextCoverage | None = None
     initial_limit = max(top_k, reranker_candidate_limit) if reranker_enabled else top_k
@@ -263,6 +348,37 @@ def run_retrieval(
             else:
                 results = []
 
+        elif evidence_plan is not None and len(evidence_plan.facets) > 1:
+            # ── Generic evidence-facet path (Round 4B) ──
+            evidence_candidates_by_facet = _retrieve_facet_candidates(
+                db,
+                project_id=project_id,
+                evidence_plan=evidence_plan,
+                mode=mode,
+                candidate_limit=candidate_limit,
+                vector_weight=vector_weight,
+                keyword_weight=keyword_weight,
+                similarity_threshold=similarity_threshold,
+                document_id=document_id,
+                embedding_provider=embedding_provider,
+            )
+            selection_started = time.perf_counter()
+            if evidence_assessor is not None:
+                counting_assessor = _CountingFacetAssessor(evidence_assessor)
+            results, evidence_selection_plan = select_evidence_facets(
+                evidence_plan,
+                evidence_candidates_by_facet,
+                top_k=top_k,
+                assessor=counting_assessor,
+            )
+            evidence_assessor_call_count = (
+                counting_assessor.calls if counting_assessor is not None else 0
+            )
+            evidence_selection_latency_ms = int(
+                (time.perf_counter() - selection_started) * 1000
+            )
+            evidence_selected = True
+
         else:
             # ── Single-facet compatibility path ──
             if mode == RetrievalMode.keyword:
@@ -361,7 +477,7 @@ def run_retrieval(
                 top_k=rerank_limit,
                 provider=KeywordOverlapReranker(),
             )
-        if not expansion_applied:
+        if not expansion_applied and not evidence_selected:
             results = select_evidence(results, top_k=top_k)
 
         if expansion_applied and selection_outcome and selection_outcome.selected:
@@ -413,6 +529,15 @@ def run_retrieval(
             "policy": "strong_lexical_then_ranked_fill" if not expansion_applied else None,
         },
     }
+    if evidence_plan is not None:
+        log_metadata["evidence_query_plan"] = evidence_plan.to_metadata()
+        if evidence_selection_plan is not None:
+            log_metadata["evidence_selection_plan"] = evidence_selection_plan.to_metadata()
+        log_metadata["evidence_planner_latency_ms"] = planner_latency_ms
+        log_metadata["evidence_planner_called"] = planner_called
+        log_metadata["evidence_assessor_called"] = evidence_assessor_call_count > 0
+        log_metadata["evidence_assessor_call_count"] = evidence_assessor_call_count
+        log_metadata["evidence_selection_latency_ms"] = evidence_selection_latency_ms
     if query_plan.is_compound:
         selected_identities = {
             (outcome.selected.document_id, outcome.selected.table_index)
@@ -460,4 +585,6 @@ def run_retrieval(
         table_context=table_context,
         table_selection_plan=selection_plan,
         table_contexts=table_contexts,
+        evidence_query_plan=evidence_plan,
+        evidence_selection_plan=evidence_selection_plan,
     )

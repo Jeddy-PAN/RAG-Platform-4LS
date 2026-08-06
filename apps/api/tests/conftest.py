@@ -3,6 +3,26 @@ import os
 import uuid
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def disable_external_round4b_providers(monkeypatch):
+    """Keep unit/API tests from making live planner or assessor requests."""
+
+    from app.rag.providers.round4b import Round4BProviderBundle
+
+    bundle = Round4BProviderBundle(
+        planner_provider=None,
+        evidence_assessor=None,
+    )
+    monkeypatch.setattr(
+        "app.rag.chat_service.get_round4b_providers",
+        lambda: bundle,
+    )
+    monkeypatch.setattr(
+        "app.services.eval.get_round4b_providers",
+        lambda: bundle,
+    )
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError

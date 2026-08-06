@@ -12,6 +12,7 @@ from app.models.project import Project
 from app.models.retrieval import RetrievalMode
 from app.rag.answering import generate_answer
 from app.rag.providers.chat import ChatProviderError
+from app.rag.providers.round4b import get_round4b_providers
 from app.rag.retrieval.service import run_retrieval
 from app.schemas.eval import EvalDatasetCreate, EvalQuestionCreate, EvalRunCreate
 from app.services.eval_judge import get_eval_judge_provider, judge_answer
@@ -305,6 +306,7 @@ def run_dataset(
     results: list[EvalResult] = []
     try:
         judge_provider = get_eval_judge_provider() if payload.judge_enabled else None
+        round4b_providers = get_round4b_providers()
         for question in questions:
             retrieval = run_retrieval(
                 db,
@@ -316,6 +318,8 @@ def run_dataset(
                 keyword_weight=payload.keyword_weight,
                 reranker_enabled=payload.reranker_enabled,
                 reranker_candidate_limit=payload.reranker_candidate_limit,
+                planner_provider=round4b_providers.planner_provider,
+                evidence_assessor=round4b_providers.evidence_assessor,
             )
             generation_started = time.perf_counter()
             answer = generate_answer(
@@ -326,6 +330,7 @@ def run_dataset(
                 table_context=retrieval.table_context,
                 table_selection_plan=retrieval.table_selection_plan,
                 table_contexts=retrieval.table_contexts,
+                evidence_selection_plan=retrieval.evidence_selection_plan,
             )
             generation_latency_ms = int((time.perf_counter() - generation_started) * 1000)
 

@@ -121,3 +121,80 @@ def test_answer_citation_quotes_original_payload() -> None:
 
     assert result.citation_sources
     assert result.citation_sources[0].text == "alpha payload row"
+
+
+def test_generate_answer_refuses_when_all_evidence_facets_unresolved() -> None:
+    from app.rag.retrieval.evidence_types import (
+        EvidenceFacet,
+        EvidenceQueryPlan,
+        EvidenceSelectionPlan,
+        FacetEvidenceCoverage,
+    )
+    from app.rag.retrieval.types import RetrievalCandidate
+
+    plan = EvidenceQueryPlan(
+        original_query="find the password for node-17",
+        facets=(EvidenceFacet(index=0, query="password node-17"),),
+        route="single",
+        confidence=0.1,
+    )
+    selection = EvidenceSelectionPlan(
+        query_plan=plan,
+        coverage=(FacetEvidenceCoverage(facet_index=0, status="unresolved"),),
+    )
+    provider = FakeChatProvider()
+    result = generate_answer(
+        question="find the password for node-17",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(),
+                document_id=uuid.uuid4(),
+                document_name="noise.txt",
+                chunk_index=0,
+                text="unrelated",
+                source_metadata={},
+            )
+        ],
+        recent_messages=[],
+        chat_provider=provider,
+        evidence_selection_plan=selection,
+    )
+
+    assert "cannot answer" in result.answer.lower()
+    assert result.model == "local-refusal"
+    assert provider.calls == []
+
+
+def test_generate_answer_passes_evidence_selection_plan(monkeypatch) -> None:
+    from app.rag.prompting import ChatPrompt
+    from app.rag.retrieval.types import RetrievalCandidate
+
+    captured: dict = {}
+    selection_plan = object()
+
+    def fake_build_chat_prompt(*args, **kwargs):
+        captured.update(kwargs)
+        return ChatPrompt(
+            messages=[{"role": "user", "content": "compound"}],
+            citation_map={},
+            should_refuse=False,
+        )
+
+    monkeypatch.setattr("app.rag.answering.build_chat_prompt", fake_build_chat_prompt)
+    generate_answer(
+        question="compound",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(),
+                document_id=uuid.uuid4(),
+                document_name="synthetic.docx",
+                chunk_index=0,
+                text="synthetic row",
+                source_metadata={},
+            )
+        ],
+        recent_messages=[],
+        chat_provider=FakeChatProvider(),
+        evidence_selection_plan=selection_plan,
+    )
+    assert captured["evidence_selection_plan"] is selection_plan

@@ -824,3 +824,78 @@ def test_chat_provider_receives_original_payload_only(
     assert "alpha payload row" in system
     assert "Document: file.docx" not in system
     assert "Table: Login" not in system
+
+
+def test_chat_persists_redacted_evidence_selection_plan(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    """Assistant metadata stores a redacted generic coverage plan."""
+
+    class RecordingProvider:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def generate_chat_completion(self, messages, temperature=0.1):
+            self.calls.append(messages)
+            return ChatProviderResult(content="synthetic answer", model="fake-chat")
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"chat-evidence-{uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        for filename, text in (
+            ("logins.docx", "username node-17 alice"),
+            ("passwords.docx", "password node-17 secret"),
+        ):
+            document = Document(
+                project_id=project.id,
+                filename=filename,
+                storage_path=f"/tmp/{filename}",
+                file_size_bytes=100,
+                status=DocumentStatus.indexed,
+            )
+            db.add(document)
+            db.flush()
+            db.add(
+                Chunk(
+                    project_id=project.id,
+                    document_id=document.id,
+                    chunk_index=0,
+                    text=text,
+                    content_hash=str(uuid.uuid4()),
+                )
+            )
+        db.commit()
+        project_id = project.id
+
+    provider = RecordingProvider()
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: _constant_embedding_provider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: provider,
+    )
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={
+            "message": "find the username and password for node-17",
+            "retrieval": {"mode": "keyword", "top_k": 8},
+        },
+    )
+
+    assert response.status_code == 200
+    assert provider.calls
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(response.json()["assistant_message_id"]))
+        plan = assistant.message_metadata["evidence_selection_plan"]
+        serialized = json.dumps(plan)
+        assert plan["facet_count"] == 2
+        assert plan["facet_indexes"] == [0, 1]
+        assert "node-17" not in serialized
+        assert "username" not in serialized
+        assert "password" not in serialized

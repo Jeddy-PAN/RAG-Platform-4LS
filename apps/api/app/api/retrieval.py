@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.chunk import Chunk
 from app.models.document import Document
 from app.models.retrieval import RetrievalLog, RetrievalLogChunk
+from app.rag.providers.round4b import get_round4b_providers
 from app.rag.retrieval.service import run_retrieval
 from app.schemas.retrieval import (
     RetrievalLogChunkRead,
@@ -51,6 +52,7 @@ def query_retrieval(
 ) -> RetrievalQueryResponse:
     """Run retrieval without answer generation."""
 
+    round4b_providers = get_round4b_providers()
     result = run_retrieval(
         db,
         project_id=project_id,
@@ -62,6 +64,8 @@ def query_retrieval(
         similarity_threshold=payload.similarity_threshold,
         reranker_enabled=payload.reranker_enabled,
         reranker_candidate_limit=payload.reranker_candidate_limit,
+        planner_provider=round4b_providers.planner_provider,
+        evidence_assessor=round4b_providers.evidence_assessor,
     )
     return RetrievalQueryResponse(
         query=result.query,
