@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="example-embedding-model")
     embedding_dimensions: int = Field(default=1024)
 
+    reranker_provider: str = Field(default="keyword_overlap")
+    reranker_base_url: str = Field(default="")
+    reranker_api_key: str = Field(default="")
+    reranker_model: str = Field(default="")
+    reranker_timeout_seconds: float = Field(default=5.0)
+    reranker_candidate_limit: int = Field(default=40)
+
     upload_storage_dir: str = Field(default="data/uploads")
     max_upload_size_bytes: int = Field(default=50 * 1024 * 1024)
 

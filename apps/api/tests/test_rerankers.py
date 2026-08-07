@@ -1,6 +1,14 @@
 import uuid
+import math
+import pytest
 
-from app.rag.retrieval.rerankers import KeywordOverlapReranker, rerank_candidates
+from app.rag.retrieval.rerankers import (
+    KeywordOverlapReranker,
+    RerankerProviderError,
+    rerank_candidates,
+    rerank_with_fallback,
+    validate_reranker_scores,
+)
 from app.rag.retrieval.types import RetrievalCandidate
 
 
@@ -80,3 +88,67 @@ def test_reranker_scores_search_text_and_returns_original_candidate() -> None:
     assert results[0].chunk_id == chunk_id
     assert results[0].text == "alpha payload row"
     assert results[0].score_metadata["reranker_score"] == 1.0
+
+
+@pytest.mark.parametrize(
+    "scores",
+    [[], ["bad"], [True], [math.nan], [math.inf]],
+)
+def test_validate_reranker_scores_rejects_invalid_responses(scores) -> None:
+    with pytest.raises(RerankerProviderError):
+        validate_reranker_scores(scores, expected_count=1)
+
+
+def test_rerank_candidates_validates_before_mutating_candidates() -> None:
+    candidate = _candidate("synthetic payload", 0.4)
+
+    class Provider:
+        name = "synthetic"
+
+        def score(self, query, candidates):
+            return ["invalid"]
+
+    with pytest.raises(RerankerProviderError):
+        rerank_candidates("synthetic query", [candidate], 1, Provider())
+
+    assert candidate.score_metadata == {}
+    assert candidate.rank is None
+
+
+def test_rerank_with_fallback_preserves_cjk_lexical_order() -> None:
+    weak = _candidate("普通说明", 0.9)
+    relevant = _candidate("服务器用户名 node17", 0.1)
+
+    class Provider:
+        name = "multilingual_cross_encoder"
+
+        def score(self, query, candidates):
+            raise RerankerProviderError("redacted")
+
+    outcome = rerank_with_fallback(
+        "服务器用户名 node17",
+        [weak, relevant],
+        top_k=1,
+        provider=Provider(),
+    )
+
+    assert outcome.fallback is True
+    assert outcome.fallback_reason == "response_invalid"
+    assert outcome.results == [relevant]
+    assert relevant.score_metadata["reranker"] == "keyword_overlap"
+
+
+def test_facet_reranker_metadata_keeps_scores_for_shared_candidate() -> None:
+    candidate = _candidate("shared node17 attribute", 0.4)
+
+    class Provider:
+        name = "multilingual_cross_encoder"
+
+        def score(self, query, candidates):
+            return [0.7 if query == "first" else 0.3]
+
+    rerank_candidates("first", [candidate], 1, Provider(), facet_index=0)
+    rerank_candidates("second", [candidate], 1, Provider(), facet_index=1)
+
+    assert candidate.score_metadata["facet_reranker_scores"] == {"0": 0.7, "1": 0.3}
+    assert candidate.score_metadata["facet_reranker_ranks"] == {"0": 1, "1": 1}

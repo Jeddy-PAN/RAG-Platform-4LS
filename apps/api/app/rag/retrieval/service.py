@@ -15,13 +15,19 @@ from app.rag.providers.types import (
     FacetEvidenceAssessor,
     QueryFacetPlannerProvider,
 )
+from app.rag.providers.reranking import get_reranker_provider_from_settings
 from app.rag.retrieval.evidence_facets import plan_evidence_facets
 from app.rag.retrieval.evidence_selection import select_evidence, select_evidence_facets
 from app.rag.retrieval.evidence_types import EvidenceQueryPlan, EvidenceSelectionPlan
 from app.rag.retrieval.hybrid import fuse_retrieval_results
 from app.rag.retrieval.keyword import retrieve_keyword
 from app.rag.retrieval.query_facets import plan_table_query
-from app.rag.retrieval.rerankers import KeywordOverlapReranker, rerank_candidates
+from app.rag.retrieval.rerankers import (
+    RerankerProvider,
+    RerankerProviderError,
+    RerankOutcome,
+    rerank_with_fallback,
+)
 from app.rag.retrieval.types import (
     FacetTableContextCoverage,
     RetrievalCandidate,
@@ -166,6 +172,7 @@ def run_retrieval(
     preferred_tables_by_facet: dict[int, tuple[uuid.UUID, int]] | None = None,
     planner_provider: QueryFacetPlannerProvider | None = None,
     evidence_assessor: FacetEvidenceAssessor | None = None,
+    reranker_provider: RerankerProvider | None = None,
 ) -> RetrievalResult:
     """Run project-scoped retrieval and persist debug logs.
 
@@ -225,7 +232,65 @@ def run_retrieval(
     evidence_selected = False
     context_partial = False
     table_context: TableContextCoverage | None = None
-    initial_limit = max(top_k, reranker_candidate_limit) if reranker_enabled else top_k
+    reranker_outcomes: list[RerankOutcome] = []
+    reranker_fallback_reason: str | None = None
+    configured_reranker_name: str | None = None
+    effective_reranker_limit = reranker_candidate_limit
+    if reranker_enabled:
+        from app.core.config import get_settings
+
+        try:
+            settings = get_settings()
+            configured_reranker_name = settings.reranker_provider
+            valid_request_limit = (
+                isinstance(reranker_candidate_limit, int)
+                and not isinstance(reranker_candidate_limit, bool)
+                and reranker_candidate_limit > 0
+            )
+            valid_settings_limit = (
+                isinstance(settings.reranker_candidate_limit, int)
+                and not isinstance(settings.reranker_candidate_limit, bool)
+                and settings.reranker_candidate_limit > 0
+            )
+            if not valid_request_limit or not valid_settings_limit:
+                effective_reranker_limit = max(top_k, 1)
+                reranker_provider = None
+                reranker_fallback_reason = "configuration_invalid"
+            else:
+                effective_reranker_limit = min(
+                    reranker_candidate_limit,
+                    settings.reranker_candidate_limit,
+                )
+            if reranker_provider is None and reranker_fallback_reason is None:
+                reranker_provider = get_reranker_provider_from_settings(settings)
+        except (RerankerProviderError, ValueError, TypeError):
+            if reranker_provider is None:
+                reranker_provider = None
+            reranker_fallback_reason = "configuration_invalid"
+    initial_limit = max(top_k, effective_reranker_limit) if reranker_enabled else top_k
+
+    def rerank_pool(
+        query_text: str,
+        pool: list[RetrievalCandidate],
+        *,
+        facet_index: int | None = None,
+    ) -> list[RetrievalCandidate]:
+        if not reranker_enabled or not pool:
+            return pool
+        if reranker_fallback_reason == "configuration_invalid":
+            return pool
+        bounded = pool[:effective_reranker_limit]
+        outcome = rerank_with_fallback(
+            query_text,
+            bounded,
+            top_k=len(bounded),
+            provider=reranker_provider,
+            facet_index=facet_index,
+            fallback_reason_override=reranker_fallback_reason,
+            provider_name_override=configured_reranker_name if reranker_fallback_reason else None,
+        )
+        reranker_outcomes.append(outcome)
+        return outcome.results
 
     try:
         # ── Intent detection (before retrieval) ──
@@ -284,6 +349,7 @@ def run_retrieval(
                         **(candidate.score_metadata or {}),
                         "table_facet_indexes": [facet.index],
                     }
+                facet_candidates = rerank_pool(facet.query, facet_candidates, facet_index=facet.index)
                 candidates_by_facet[facet.index] = facet_candidates
 
             selection_plan = select_table_facets(query_plan, candidates_by_facet)
@@ -362,6 +428,14 @@ def run_retrieval(
                 document_id=document_id,
                 embedding_provider=embedding_provider,
             )
+            evidence_candidates_by_facet = {
+                facet.index: rerank_pool(
+                    facet.query,
+                    evidence_candidates_by_facet.get(facet.index, []),
+                    facet_index=facet.index,
+                )
+                for facet in evidence_plan.facets
+            }
             selection_started = time.perf_counter()
             if evidence_assessor is not None:
                 counting_assessor = _CountingFacetAssessor(evidence_assessor)
@@ -399,6 +473,7 @@ def run_retrieval(
                 document_id=document_id,
                 query_embedding=query_embedding,
             )
+            results = rerank_pool(query, results)
 
             # ── Table-aware selection and expansion ──
             if is_full_table:
@@ -468,15 +543,6 @@ def run_retrieval(
                     pass
 
         # ── Final truncation ──
-        if reranker_enabled:
-            actual_top_k = top_k if not expansion_applied else max(top_k, len(results))
-            rerank_limit = actual_top_k if expansion_applied else len(results)
-            results = rerank_candidates(
-                query,
-                results,
-                top_k=rerank_limit,
-                provider=KeywordOverlapReranker(),
-            )
         if not expansion_applied and not evidence_selected:
             results = select_evidence(results, top_k=top_k)
 
@@ -518,8 +584,28 @@ def run_retrieval(
         "keyword_weight": keyword_weight,
         "similarity_threshold": similarity_threshold,
         "reranker_enabled": reranker_enabled,
-        "reranker": "keyword_overlap" if reranker_enabled else None,
-        "reranker_candidate_limit": initial_limit if reranker_enabled else None,
+        "reranker": (
+            reranker_outcomes[0].provider_name
+            if reranker_outcomes
+            else (configured_reranker_name if reranker_enabled else None)
+        ),
+        "reranker_candidate_limit": effective_reranker_limit if reranker_enabled else None,
+        "reranker_candidate_count": sum(
+            outcome.candidate_count for outcome in reranker_outcomes
+        ) if reranker_enabled else 0,
+        "reranker_latency_ms": sum(
+            outcome.latency_ms for outcome in reranker_outcomes
+        ) if reranker_enabled else 0,
+        "reranker_fallback": any(
+            outcome.fallback for outcome in reranker_outcomes
+        ) or reranker_fallback_reason is not None,
+        "reranker_fallback_reason": (
+            reranker_fallback_reason
+            or next(
+                (outcome.fallback_reason for outcome in reranker_outcomes if outcome.fallback),
+                None,
+            )
+        ),
         "table_intent": table_intent,
         "is_full_table": is_full_table,
         "expansion_applied": expansion_applied,

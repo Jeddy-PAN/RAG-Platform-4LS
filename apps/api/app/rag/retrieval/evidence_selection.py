@@ -311,9 +311,14 @@ def _facet_support_score(
     return float(features["support_strength"]) if features["support"] else 0.0
 
 
-def _stable_score_key(candidate) -> tuple:
+def _stable_score_key(candidate, facet_index: int | None = None) -> tuple:
     """Descending fused/keyword/vector score with a stable chunk-id tiebreak."""
 
+    if facet_index is not None:
+        facet_scores = (candidate.score_metadata or {}).get("facet_reranker_scores") or {}
+        facet_score = facet_scores.get(str(facet_index))
+        if isinstance(facet_score, (int, float)) and not isinstance(facet_score, bool):
+            return (-float(facet_score), str(candidate.chunk_id))
     score = candidate.fused_score
     if score is None:
         score = candidate.keyword_score
@@ -335,7 +340,7 @@ def _best_for_facet(
         supporting,
         key=lambda candidate: (
             -_facet_support_score(facet, candidate),
-            *_stable_score_key(candidate),
+            *_stable_score_key(candidate, facet.index),
         ),
     )[0]
 
@@ -374,6 +379,9 @@ def _merge_metadata(left: dict, right: dict) -> dict:
         if key == "evidence_facet_indexes":
             existing = merged.get(key, [])
             merged[key] = sorted(set(existing or []) | set(value or []))
+        elif key in {"facet_reranker_scores", "facet_reranker_ranks"}:
+            existing = merged.get(key, {})
+            merged[key] = {**existing, **(value or {})}
         elif isinstance(value, (int, float)) and not isinstance(value, bool):
             existing = merged.get(key)
             if isinstance(existing, (int, float)) and not isinstance(existing, bool):
@@ -538,7 +546,9 @@ def select_evidence_facets(
             if not candidates:
                 group_candidates = []
                 break
-            group_candidates.append(sorted(candidates, key=_stable_score_key)[0])
+            group_candidates.append(
+                sorted(candidates, key=lambda candidate: _stable_score_key(candidate, facet_index))[0]
+            )
         required_new_ids = {
             candidate.chunk_id
             for candidate in group_candidates
