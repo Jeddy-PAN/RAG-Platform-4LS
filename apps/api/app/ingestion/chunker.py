@@ -94,11 +94,22 @@ def _chunk_table_section(
             data_lines.append(stripped)
 
     if not data_lines:
-        # Edge case: table with caption/header but no data rows in this section
-        # (should not happen with current parser but be defensive)
+        # A schema-only table has meaningful caption/header content but no
+        # data-row range to describe.
         text = full_text.strip()
         if text:
-            metadata = _build_metadata(section, global_offset, 0, 0, total_rows)
+            if total_rows == 0:
+                metadata = {
+                    **section.source_metadata,
+                    "section_index": section.section_index,
+                    "chunker_version": CHUNKER_VERSION,
+                    "chunk_index": global_offset,
+                    "total_rows": 0,
+                    "table_chunk_type": "table",
+                    "schema_only": True,
+                }
+            else:
+                metadata = _build_metadata(section, global_offset, 0, 0, total_rows)
             return [
                 ChunkCandidate(
                     chunk_index=global_offset,

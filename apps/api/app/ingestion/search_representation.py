@@ -78,7 +78,11 @@ def build_search_text(
 
     lines: list[str] = []
     for label, value in _context_entries(document_name, source_metadata):
-        if value in payload_lines:
+        # XLSX table headers are structural context even when the chunk
+        # payload repeats the header line for table chunking.
+        if value in payload_lines and not (
+            label == "Columns" and source_metadata.get("format") == "xlsx"
+        ):
             continue
         lines.append(f"{label}: {value}")
 

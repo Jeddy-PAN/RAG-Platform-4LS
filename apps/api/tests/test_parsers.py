@@ -459,7 +459,7 @@ def test_docx_parser_tbl_header_marker_detected(tmp_path: Path) -> None:
 # ── XLSX ──────────────────────────────────────────────────────────
 
 def test_xlsx_parser_returns_visible_sheet_rows(tmp_path: Path) -> None:
-    """XLSX parser should convert non-empty rows into deterministic text."""
+    """XLSX parser emits DOCX-compatible table/header/row sections."""
 
     from openpyxl import Workbook
 
@@ -473,12 +473,15 @@ def test_xlsx_parser_returns_visible_sheet_rows(tmp_path: Path) -> None:
 
     sections = get_parser_for_path(path).parse(path)
 
-    assert [section.text for section in sections] == ["Name | Value", "Alpha | 42"]
-    assert sections[1].source_metadata == {
-        "sheet_name": "Data",
-        "row_start": 2,
-        "row_end": 2,
-    }
+    assert [section.source_metadata["type"] for section in sections] == [
+        "table",
+        "table_header",
+        "table_row",
+    ]
+    assert sections[0].text == "Name | Value\nName: Alpha | Value: 42"
+    assert sections[2].source_metadata["sheet_name"] == "Data"
+    assert sections[2].source_metadata["sheet_row"] == 2
+    assert sections[2].source_metadata["data_row"] == 1
 
 
 # ── PDF ───────────────────────────────────────────────────────────
