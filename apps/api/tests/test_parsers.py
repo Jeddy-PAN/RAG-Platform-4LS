@@ -486,8 +486,8 @@ def test_xlsx_parser_returns_visible_sheet_rows(tmp_path: Path) -> None:
 
 # ── PDF ───────────────────────────────────────────────────────────
 
-def test_pdf_parser_returns_one_section_per_text_page(tmp_path: Path) -> None:
-    """PDF parser should extract text page by page."""
+def test_pdf_parser_returns_native_text_block_with_page_provenance(tmp_path: Path) -> None:
+    """PDF parser should retain native text block provenance."""
 
     import fitz
 
@@ -502,7 +502,12 @@ def test_pdf_parser_returns_one_section_per_text_page(tmp_path: Path) -> None:
 
     assert len(sections) == 1
     assert "PDF page text" in sections[0].text
-    assert sections[0].source_metadata == {"page_number": 1}
+    assert sections[0].source_metadata["format"] == "pdf"
+    assert sections[0].source_metadata["type"] == "paragraph"
+    assert sections[0].source_metadata["page_number"] == 1
+    assert sections[0].source_metadata["page_block_index"] == 0
+    assert sections[0].source_metadata["extraction_method"] == "native_text"
+    assert sections[0].source_metadata["extraction_confidence"] == 1.0
 
 
 # ── Common ────────────────────────────────────────────────────────

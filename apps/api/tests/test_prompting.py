@@ -44,6 +44,70 @@ def test_prompt_includes_source_blocks_and_citation_map() -> None:
     assert prompt.messages[-1] == {"role": "user", "content": "What is escalation?"}
 
 
+def test_prompt_redacts_internal_pdf_geometry_but_keeps_page_provenance() -> None:
+    prompt = build_chat_prompt(
+        question="What does page two say?",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(),
+                document_id=uuid.uuid4(),
+                document_name="runbook.pdf",
+                chunk_index=0,
+                text="The command result is shown below.",
+                source_metadata={
+                    "format": "pdf",
+                    "page_number": 2,
+                    "bbox": [1, 2, 3, 4],
+                    "figure_bbox": [5, 6, 7, 8],
+                    "figure_index": 0,
+                    "extraction_method": "native_text",
+                    "extraction_confidence": 1.0,
+                },
+            )
+        ],
+        recent_messages=[],
+    )
+
+    source_block = prompt.messages[0]["content"]
+    assert "page_number" in source_block
+    assert "bbox" not in source_block
+    assert "figure_" not in source_block
+    assert "extraction_" not in source_block
+    assert prompt.citation_map[1].source_metadata == {"format": "pdf", "page_number": 2}
+
+
+def test_prompt_redacts_pdf_inline_header_candidates() -> None:
+    prompt = build_chat_prompt(
+        question="What rows are present?",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(),
+                document_id=uuid.uuid4(),
+                document_name="people.pdf",
+                chunk_index=0,
+                text="Name | Role\nAlice | Engineer",
+                source_metadata={
+                    "format": "pdf",
+                    "page_number": 1,
+                    "headers": [],
+                    "header_candidates": ["Name", "Role"],
+                    "header_candidate_confidence": 0.6,
+                },
+            )
+        ],
+        recent_messages=[],
+    )
+
+    source_block = prompt.messages[0]["content"]
+    assert "header_candidates" not in source_block
+    assert "header_candidate_confidence" not in source_block
+    assert prompt.citation_map[1].source_metadata == {
+        "format": "pdf",
+        "page_number": 1,
+        "headers": [],
+    }
+
+
 def test_prompt_empty_retrieval_marks_no_answer() -> None:
     """No retrieved chunks should trigger the no-answer path."""
 

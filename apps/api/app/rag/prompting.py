@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.rag.retrieval.evidence_types import EvidenceSelectionPlan
+from app.rag.source_metadata import public_source_metadata
 from app.rag.retrieval.types import (
     FacetTableContextCoverage,
     RetrievalCandidate,
@@ -48,12 +49,13 @@ def build_chat_prompt(
     citation_map: dict[int, PromptSource] = {}
     source_blocks: list[str] = []
     for index, chunk in enumerate(retrieved_chunks, start=1):
+        safe_metadata = public_source_metadata(chunk.source_metadata)
         citation_map[index] = PromptSource(
             citation_index=index,
             chunk_id=chunk.chunk_id,
             document_id=chunk.document_id,
             document_name=chunk.document_name,
-            source_metadata=chunk.source_metadata,
+            source_metadata=safe_metadata,
             text=chunk.text,
         )
         source_blocks.append(
@@ -62,7 +64,7 @@ def build_chat_prompt(
                     f"[Source {index}]",
                     f"chunk_id: {chunk.chunk_id}",
                     f"document: {chunk.document_name}",
-                    f"metadata: {chunk.source_metadata}",
+                    f"metadata: {safe_metadata}",
                     f"content: {chunk.text}",
                 ]
             )

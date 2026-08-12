@@ -195,12 +195,19 @@ def test_chat_api_creates_conversation_messages_and_citations(
     """Chat API should persist conversation, messages, citations, and retrieval log."""
 
     with sqlite_session_factory() as db:
-        project, _, _ = seed_retrieval_chunk(
+        project, _, chunk = seed_retrieval_chunk(
             db,
             "chat",
             "Escalation starts after triage.",
             [0.1] * 1024,
         )
+        chunk.source_metadata = {
+            "format": "pdf",
+            "page_number": 2,
+            "bbox": [1, 2, 3, 4],
+            "figure_bbox": [5, 6, 7, 8],
+            "extraction_confidence": 1.0,
+        }
         db.commit()
         project_id = project.id
 
@@ -226,6 +233,10 @@ def test_chat_api_creates_conversation_messages_and_citations(
     body = response.json()
     assert body["answer"] == "Escalation starts after triage."
     assert body["citations"]
+    assert body["citations"][0]["citation_metadata"] == {
+        "format": "pdf",
+        "page_number": 2,
+    }
     assert body["retrieval_log_id"]
     assert body["model"] == "fake-chat"
 

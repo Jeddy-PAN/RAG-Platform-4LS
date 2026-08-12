@@ -45,6 +45,22 @@ def test_ordinary_paragraph_includes_document_and_payload() -> None:
     assert "Escalation starts after triage." in output
 
 
+def test_pdf_page_number_is_allowlisted_but_other_formats_remain_unchanged() -> None:
+    pdf = _build(
+        document_name="handbook.pdf",
+        payload_text="Escalation starts after triage.",
+        source_metadata={"format": "pdf", "page_number": 4},
+    )
+    xlsx = _build(
+        document_name="inventory.xlsx",
+        payload_text="node-01",
+        source_metadata={"format": "xlsx", "page_number": 4},
+    )
+
+    assert "Page: 4" in pdf
+    assert "Page:" not in xlsx
+
+
 def test_field_ordering_follows_the_fixed_contract() -> None:
     """Filename, sheet, caption, headers, then payload appear in that order."""
 

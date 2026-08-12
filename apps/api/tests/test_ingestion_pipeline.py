@@ -1,6 +1,7 @@
 from pathlib import Path
 import uuid
 
+import fitz
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -187,6 +188,83 @@ def test_successful_reindex_leaves_one_active_current_generation(
         if chunk.is_active
     } == {CURRENT_SEARCH_REPRESENTATION_VERSION}
     assert document.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION
+
+
+def test_pdf_v1_reindex_rebuilds_page_and_raw_table_generation(
+    sqlite_session_factory,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "legacy.pdf"
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Operations")
+    page.draw_rect(fitz.Rect(72, 110, 308, 200))
+    page.draw_line((190, 110), (190, 200))
+    page.draw_line((72, 140), (308, 140))
+    page.draw_line((72, 170), (308, 170))
+    for y, row in [(130, ("Name", "Role")), (160, ("Alice", "Engineer")), (190, ("Bob", "Designer"))]:
+        page.insert_text((80, y), row[0])
+        page.insert_text((198, y), row[1])
+    pdf.save(path)
+    pdf.close()
+
+    with Session(sqlite_session_factory.kw["bind"]) as db:
+        project = Project(name="PDF representation migration")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename=path.name,
+            storage_path=str(path),
+            file_size_bytes=path.stat().st_size,
+            status=DocumentStatus.indexed,
+            search_representation_version="canonical-search-v1",
+        )
+        db.add(document)
+        db.flush()
+        legacy_chunk = Chunk(
+            project_id=project.id,
+            document_id=document.id,
+            chunk_index=0,
+            text="legacy PDF payload",
+            token_count=3,
+            content_hash="legacy-pdf-generation",
+            source_metadata={"format": "pdf"},
+            search_text="Document: legacy.pdf\nContent:\nlegacy PDF payload",
+            search_representation_version="canonical-search-v1",
+            embedding=[0.1] * 1024,
+            is_active=True,
+        )
+        db.add(legacy_chunk)
+        job = IngestionJob(project_id=project.id, document_id=document.id)
+        db.add(job)
+        db.commit()
+
+        assert document.needs_reindex is True
+        assert job.job_metadata == {}
+
+        ingest_document_job(
+            db,
+            job.id,
+            project.id,
+            document.id,
+            embedding_provider=FakeEmbeddingProvider(),
+        )
+
+        db.refresh(document)
+        chunks = db.query(Chunk).filter(Chunk.document_id == document.id).all()
+        active = [chunk for chunk in chunks if chunk.is_active]
+
+    assert document.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION
+    assert document.needs_reindex is False
+    assert legacy_chunk.is_active is False
+    assert active
+    assert all(chunk.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION for chunk in active)
+    assert any("Page: 1" in chunk.search_text for chunk in active)
+    table = next(chunk for chunk in active if chunk.source_metadata.get("table_chunk_type") == "table")
+    assert table.source_metadata["row_count"] == 3
+    assert table.source_metadata["data_row_start"] == 1
+    assert table.source_metadata["data_row_end"] == 3
 
 
 def test_ingestion_pipeline_requires_project_scoped_document(

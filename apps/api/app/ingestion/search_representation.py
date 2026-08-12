@@ -10,7 +10,7 @@ from collections.abc import Mapping
 
 
 LEGACY_SEARCH_REPRESENTATION_VERSION = "legacy-v0"
-CURRENT_SEARCH_REPRESENTATION_VERSION = "canonical-search-v1"
+CURRENT_SEARCH_REPRESENTATION_VERSION = "canonical-search-v2"
 
 
 def _normalize(value: str) -> str:
@@ -34,6 +34,10 @@ def _context_entries(
     name = _normalize(document_name)
     if name:
         entries.append(("Document", name))
+
+    page_number = source_metadata.get("page_number")
+    if source_metadata.get("format") == "pdf" and isinstance(page_number, int) and page_number > 0:
+        entries.append(("Page", str(page_number)))
 
     heading_path = source_metadata.get("heading_path")
     if isinstance(heading_path, str) and heading_path.strip():

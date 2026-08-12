@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.chunk import Chunk
 from app.models.conversation import MessageCitation
+from app.rag.source_metadata import public_source_metadata
 
 
 def persist_citations(
@@ -29,7 +30,7 @@ def persist_citations(
             chunk_id=chunk.id,
             citation_index=index,
             quote=quote,
-            citation_metadata=chunk.source_metadata,
+            citation_metadata=public_source_metadata(chunk.source_metadata),
         )
         db.add(citation)
         citations.append(citation)
