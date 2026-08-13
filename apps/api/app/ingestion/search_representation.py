@@ -10,7 +10,7 @@ from collections.abc import Mapping
 
 
 LEGACY_SEARCH_REPRESENTATION_VERSION = "legacy-v0"
-CURRENT_SEARCH_REPRESENTATION_VERSION = "canonical-search-v2"
+CURRENT_SEARCH_REPRESENTATION_VERSION = "canonical-search-v3"
 
 
 def _normalize(value: str) -> str:

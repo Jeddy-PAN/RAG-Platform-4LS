@@ -248,6 +248,58 @@ def test_retrieval_api_returns_debug_fields(api_client, sqlite_session_factory, 
     assert logged_chunk.score_metadata["keyword_rank"] == 1
 
 
+def test_retrieval_api_redacts_internal_hierarchy_identity(
+    api_client,
+    sqlite_session_factory,
+) -> None:
+    """The debug endpoint exposes safe hierarchy context but not internal IDs."""
+
+    with sqlite_session_factory() as db:
+        project = Project(name=f"Hierarchy metadata {uuid.uuid4()}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename="runbook.md",
+            storage_path="/tmp/runbook.md",
+            file_size_bytes=10,
+            status=DocumentStatus.indexed,
+        )
+        db.add(document)
+        db.flush()
+        db.add(
+            Chunk(
+                project_id=project.id,
+                document_id=document.id,
+                chunk_index=0,
+                text="restart service",
+                content_hash=str(uuid.uuid4()),
+                embedding=[0.1] * 1024,
+                source_metadata={
+                    "format": "markdown",
+                    "heading_path": "Operations > Production",
+                    "structural_parent_id": "h:1/Operations/h:2/Production",
+                    "section_role": "content",
+                    "heading_level": 2,
+                },
+            )
+        )
+        db.commit()
+        project_id = project.id
+
+    response = api_client.post(
+        f"/api/projects/{project_id}/retrieval/query",
+        json={"query": "restart", "mode": "keyword", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["results"][0]["source_metadata"]
+    assert metadata["heading_path"] == "Operations > Production"
+    assert metadata["section_role"] == "content"
+    assert metadata["heading_level"] == 2
+    assert "structural_parent_id" not in metadata
+
+
 def test_full_table_query_without_table_candidates_falls_back_to_normal_top_k(
     api_client,
     sqlite_session_factory,
@@ -428,7 +480,7 @@ def test_retrieval_api_serializes_numpy_scores(
                     document_name="source.txt",
                     chunk_index=0,
                     text="alpha",
-                    source_metadata={"page": np.int64(1)},
+                        source_metadata={"format": "pdf", "page_number": np.int64(1)},
                     vector_score=np.float32(0.75),
                     fused_score=np.float32(0.75),
                     score_metadata={"normalized_vector_score": np.float32(1.0)},
@@ -447,7 +499,7 @@ def test_retrieval_api_serializes_numpy_scores(
     result = response.json()["results"][0]
     assert isinstance(result["vector_score"], float)
     assert isinstance(result["fused_score"], float)
-    assert isinstance(result["source_metadata"]["page"], int)
+    assert isinstance(result["source_metadata"]["page_number"], int)
     assert isinstance(result["score_metadata"]["normalized_vector_score"], float)
 
 

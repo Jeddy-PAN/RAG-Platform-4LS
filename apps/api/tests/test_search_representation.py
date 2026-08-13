@@ -1,6 +1,28 @@
 """Contract tests for the Round 2 canonical search-text builder."""
 
-from app.ingestion.search_representation import build_search_text
+from app.ingestion.search_representation import (
+    CURRENT_SEARCH_REPRESENTATION_VERSION,
+    build_search_text,
+)
+
+
+def test_hierarchy_context_uses_current_v3_representation_and_redacts_identity():
+    output = _build(
+        document_name="runbook.md",
+        payload_text="restart service",
+        source_metadata={
+            "heading_path": "Operations > Production",
+            "structural_parent_id": "h:1/secret",
+            "heading_level": 2,
+            "line_start": 9,
+        },
+    )
+
+    assert CURRENT_SEARCH_REPRESENTATION_VERSION == "canonical-search-v3"
+    assert "Heading: Operations > Production" in output
+    assert "secret" not in output
+    assert "heading_level" not in output
+    assert "line_start" not in output
 
 
 def _build(

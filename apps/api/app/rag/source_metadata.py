@@ -7,6 +7,8 @@ _PUBLIC_SOURCE_METADATA_KEYS = frozenset(
     {
         "format",
         "type",
+        "section_role",
+        "heading_level",
         "page_number",
         "heading_path",
         "sheet_name",

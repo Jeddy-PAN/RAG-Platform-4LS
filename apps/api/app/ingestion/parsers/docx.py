@@ -1,6 +1,8 @@
 from pathlib import Path
+import re
 
 from app.ingestion.parsers.base import NormalizedSection, ParserError, StructuredTable
+from app.ingestion.parsers.hierarchy import HierarchyState
 
 
 def _looks_like_header(cells: list[str]) -> bool:
@@ -66,6 +68,17 @@ def _extract_paragraph_text(para_index: int, document) -> str | None:
         return None
     text = paragraphs[para_index].text.strip()
     return text if text else None
+
+
+def _heading_level(paragraph) -> int | None:
+    """Return the Word heading level for exact ``Heading N`` styles only."""
+
+    style = getattr(paragraph, "style", None)
+    style_name = getattr(style, "name", None)
+    if not isinstance(style_name, str):
+        return None
+    match = re.fullmatch(r"heading [1-9]", style_name.strip(), flags=re.IGNORECASE)
+    return int(style_name.strip()[-1]) if match else None
 
 
 def _extract_cell_text(tc_element) -> tuple[str, bool]:
@@ -396,6 +409,7 @@ def _normalize_table(table, table_index: int, block_index: int) -> StructuredTab
 def _emit_table_sections(
     table: StructuredTable,
     sections: list[NormalizedSection],
+    hierarchy_metadata: dict | None = None,
 ) -> None:
     """Append NormalizedSections for a StructuredTable to the sections list."""
     table_index = table.table_index
@@ -440,6 +454,7 @@ def _emit_table_sections(
                     "header_source": header_source,
                     "nested_table_fallback": has_nested,
                     "nested_rows": nested_rows if has_nested else [],
+                    **(hierarchy_metadata or {}),
                 },
             )
         )
@@ -462,6 +477,7 @@ def _emit_table_sections(
                         "headers": headers,
                         "header_source": header_source,
                         **({"caption": caption} if caption else {}),
+                        **(hierarchy_metadata or {}),
                     },
                 )
             )
@@ -487,6 +503,7 @@ def _emit_table_sections(
         }
         if has_nested and row_index in nested_rows:
             row_meta["nested_table_fallback"] = True
+        row_meta.update(hierarchy_metadata or {})
         sections.append(
             NormalizedSection(
                 section_index=len(sections),
@@ -504,12 +521,20 @@ class DocxParser:
 
         document = Document(path)
         sections: list[NormalizedSection] = []
+        hierarchy = HierarchyState()
 
         for tag, index, block_index in _iter_body_elements(document):
             if tag == "p":
                 text = _extract_paragraph_text(index, document)
                 if text is None:
                     continue
+                paragraph = document.paragraphs[index]
+                heading_level = _heading_level(paragraph)
+                hierarchy_metadata = (
+                    hierarchy.enter_heading(heading_level, text)
+                    if heading_level is not None
+                    else hierarchy.content_metadata("content")
+                )
                 sections.append(
                     NormalizedSection(
                         section_index=len(sections),
@@ -520,6 +545,7 @@ class DocxParser:
                             "paragraph_start": index + 1,
                             "paragraph_end": index + 1,
                             "block_index": block_index,
+                            **hierarchy_metadata,
                         },
                     )
                 )
@@ -527,7 +553,7 @@ class DocxParser:
                 if index >= len(document.tables):
                     continue
                 table = _normalize_table(document.tables[index], index, block_index)
-                _emit_table_sections(table, sections)
+                _emit_table_sections(table, sections, hierarchy.content_metadata("table"))
 
         if not sections:
             raise ParserError("Document contains no usable text")

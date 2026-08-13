@@ -12,6 +12,7 @@ from app.models.document import Document
 from app.models.retrieval import RetrievalLog, RetrievalLogChunk
 from app.rag.providers.round4b import get_round4b_providers
 from app.rag.retrieval.service import run_retrieval
+from app.rag.source_metadata import public_source_metadata
 from app.schemas.retrieval import (
     RetrievalLogChunkRead,
     RetrievalLogRead,
@@ -81,7 +82,7 @@ def query_retrieval(
                 document_name=candidate.document_name,
                 chunk_index=candidate.chunk_index,
                 text_preview=candidate.text[:300],
-                source_metadata=_json_safe(candidate.source_metadata),
+                source_metadata=_json_safe(public_source_metadata(candidate.source_metadata)),
                 vector_score=_optional_float(candidate.vector_score),
                 keyword_score=_optional_float(candidate.keyword_score),
                 fused_score=_optional_float(candidate.fused_score),

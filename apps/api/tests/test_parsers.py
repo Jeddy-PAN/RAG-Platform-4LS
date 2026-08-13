@@ -31,13 +31,12 @@ def test_markdown_parser_preserves_markdown_text(tmp_path: Path) -> None:
 
     sections = get_parser_for_path(path).parse(path)
 
-    assert len(sections) == 1
-    assert sections[0].text == "# Runbook\n- Check latency\n- Review citations"
-    assert sections[0].source_metadata == {
-        "format": "markdown",
-        "line_start": 1,
-        "line_end": 4,
-    }
+    assert [section.text for section in sections] == [
+        "# Runbook",
+        "- Check latency\n- Review citations",
+    ]
+    assert sections[0].source_metadata["section_role"] == "heading"
+    assert sections[1].source_metadata["heading_path"] == "Runbook"
 
 
 # ── DOCX ──────────────────────────────────────────────────────────
@@ -66,6 +65,7 @@ def test_docx_parser_returns_non_empty_paragraphs(tmp_path: Path) -> None:
         "paragraph_start": 1,
         "paragraph_end": 1,
         "block_index": 0,
+        "section_role": "content",
     }
 
 

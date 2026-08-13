@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from sqlalchemy.orm import Session
 
 from app.ingestion.pipeline import ingest_document_job
@@ -59,11 +61,26 @@ def test_ingestion_failure_marks_statuses(sqlite_session_factory, tmp_path: Path
     assert document.search_representation_version is None
 
 
-def test_failed_reindex_preserves_existing_chunks(sqlite_session_factory, tmp_path: Path) -> None:
+@pytest.mark.parametrize("suffix", [".txt", ".md", ".docx"])
+def test_failed_reindex_preserves_existing_chunks(
+    sqlite_session_factory,
+    tmp_path: Path,
+    suffix: str,
+) -> None:
     """Failed reindex should not delete chunks from a previous good index."""
 
-    path = tmp_path / "source.txt"
-    path.write_text("alpha beta gamma", encoding="utf-8")
+    path = tmp_path / f"source{suffix}"
+    if suffix == ".docx":
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_heading("Operations", level=1)
+        doc.add_paragraph("alpha beta gamma")
+        doc.save(path)
+    elif suffix == ".md":
+        path.write_text("# Operations\nalpha beta gamma", encoding="utf-8")
+    else:
+        path.write_text("alpha beta gamma", encoding="utf-8")
 
     with Session(sqlite_session_factory.kw["bind"]) as db:
         project = Project(name="Reindex")
@@ -71,7 +88,7 @@ def test_failed_reindex_preserves_existing_chunks(sqlite_session_factory, tmp_pa
         db.flush()
         document = Document(
             project_id=project.id,
-            filename="source.txt",
+            filename=path.name,
             storage_path=str(path),
             file_size_bytes=path.stat().st_size,
             status=DocumentStatus.uploaded,
@@ -90,6 +107,7 @@ def test_failed_reindex_preserves_existing_chunks(sqlite_session_factory, tmp_pa
             embedding_provider=StaticEmbeddingProvider(),
         )
         original_chunk_count = db.query(Chunk).count()
+        original_active_count = db.query(Chunk).filter(Chunk.is_active.is_(True)).count()
 
         second_job = IngestionJob(project_id=project.id, document_id=document.id)
         db.add(second_job)
@@ -113,5 +131,7 @@ def test_failed_reindex_preserves_existing_chunks(sqlite_session_factory, tmp_pa
     # The previous good index and its representation version survive the failure.
     assert document.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION
     active = db.query(Chunk).filter(Chunk.is_active.is_(True)).all()
-    assert len(active) == 1
-    assert active[0].search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION
+    assert len(active) == original_active_count
+    assert all(chunk.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION for chunk in active)
+    if suffix != ".txt":
+        assert any(chunk.source_metadata.get("heading_path") == "Operations" for chunk in active)

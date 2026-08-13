@@ -190,6 +190,59 @@ def test_successful_reindex_leaves_one_active_current_generation(
     assert document.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION
 
 
+@pytest.mark.parametrize("suffix", [".md", ".docx"])
+def test_hierarchy_formats_persist_heading_metadata_and_search_context(
+    sqlite_session_factory,
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    """DOCX and Markdown indexing persists hierarchy context in v3 chunks."""
+
+    path = tmp_path / f"hierarchy{suffix}"
+    if suffix == ".md":
+        path.write_text("# Operations\nrestart service", encoding="utf-8")
+    else:
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_heading("Operations", level=1)
+        doc.add_paragraph("restart service")
+        doc.save(path)
+
+    with Session(sqlite_session_factory.kw["bind"]) as db:
+        project = Project(name=f"Hierarchy {suffix}")
+        db.add(project)
+        db.flush()
+        document = Document(
+            project_id=project.id,
+            filename=path.name,
+            storage_path=str(path),
+            file_size_bytes=path.stat().st_size,
+            status=DocumentStatus.uploaded,
+        )
+        db.add(document)
+        db.flush()
+        job = IngestionJob(project_id=project.id, document_id=document.id)
+        db.add(job)
+        db.commit()
+
+        ingest_document_job(
+            db,
+            job.id,
+            project.id,
+            document.id,
+            embedding_provider=FakeEmbeddingProvider(),
+        )
+        db.refresh(document)
+        active = db.query(Chunk).filter(Chunk.document_id == document.id, Chunk.is_active.is_(True)).all()
+
+    assert document.search_representation_version == "canonical-search-v3"
+    assert active
+    assert any(chunk.source_metadata.get("heading_path") == "Operations" for chunk in active)
+    assert any("Heading: Operations" in chunk.search_text for chunk in active)
+    assert all(chunk.search_representation_version == CURRENT_SEARCH_REPRESENTATION_VERSION for chunk in active)
+
+
 def test_pdf_v1_reindex_rebuilds_page_and_raw_table_generation(
     sqlite_session_factory,
     tmp_path: Path,
