@@ -306,6 +306,7 @@ def send_chat_message(
             answer = AnswerResult(
                 answer=_build_table_facet_clarification(pending_outcome),
                 model="local-table-clarification",
+                grounding_status="local_refusal",
             )
         elif retrieval.table_selection and retrieval.table_selection.status == "ambiguous":
             answer = AnswerResult(
@@ -314,6 +315,7 @@ def send_chat_message(
                     effective_question,
                 ),
                 model="local-table-clarification",
+                grounding_status="local_refusal",
             )
         else:
             answer = generate_answer(
@@ -337,6 +339,11 @@ def send_chat_message(
         "model": answer.model,
         "retrieval_log_id": str(retrieval.retrieval_log_id),
         "context_partial": retrieval.context_partial,
+        "grounding": {
+            "status": answer.grounding_status,
+            "claim_count": len(answer.claims),
+            **({"reason": answer.grounding_reason} if answer.grounding_reason else {}),
+        },
     }
     if retrieval.table_selection_plan is not None:
         if answer.model == "local-table-clarification":

@@ -8,6 +8,7 @@ from app.services.eval_scoring import answer_matches
 from app.rag.providers.chat import ChatProviderResult
 from tests.retrieval_test_helpers import seed_retrieval_chunk
 from tests.test_retrieval_api import DeterministicEmbeddingProvider, seed_two_named_tables
+from tests.grounded_test_helpers import grounded_content
 
 
 class FakeEvalChatProvider:
@@ -15,7 +16,7 @@ class FakeEvalChatProvider:
         """Return deterministic eval answers without external API calls."""
 
         return ChatProviderResult(
-            content="Google Sycamore claimed quantum supremacy in 2019.",
+            content=grounded_content(messages),
             model="fake-eval-chat",
         )
 
@@ -40,7 +41,7 @@ class FakeJudgeChatProvider:
         self.calls += 1
         if self.calls == 1:
             return ChatProviderResult(
-                content="Sycamore made a narrow 2019 quantum supremacy claim.",
+                content=grounded_content(messages, "Sycamore made a narrow 2019 quantum supremacy claim."),
                 model="fake-answer",
             )
         return ChatProviderResult(
@@ -676,7 +677,7 @@ class RecordingChatProvider:
 
     def generate_chat_completion(self, messages, temperature=0.1):
         self.messages.append(messages)
-        return ChatProviderResult(content="synthetic answer", model="fake-eval-chat")
+        return ChatProviderResult(content=grounded_content(messages, "synthetic answer"), model="fake-eval-chat")
 
 
 def test_eval_compound_prompt_keeps_facet_and_partial_instructions(

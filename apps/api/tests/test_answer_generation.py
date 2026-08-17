@@ -2,6 +2,7 @@ import uuid
 
 from app.rag.answering import generate_answer
 from app.rag.providers.chat import ChatProviderResult
+from tests.grounded_test_helpers import grounded_content
 
 
 class FakeChatProvider:
@@ -10,7 +11,7 @@ class FakeChatProvider:
 
     def generate_chat_completion(self, messages, temperature=0.1):
         self.calls.append(messages)
-        return ChatProviderResult(content="Use escalation policy.", model="fake-chat")
+        return ChatProviderResult(content=grounded_content(messages, "Use escalation policy."), model="fake-chat")
 
 
 def test_generate_answer_refuses_without_chunks() -> None:
@@ -27,6 +28,7 @@ def test_generate_answer_refuses_without_chunks() -> None:
 
     assert "cannot answer" in result.answer.lower()
     assert result.model == "local-refusal"
+    assert result.grounding_status == "local_refusal"
     assert provider.calls == []
 
 

@@ -44,6 +44,55 @@ def test_prompt_includes_source_blocks_and_citation_map() -> None:
     assert prompt.messages[-1] == {"role": "user", "content": "What is escalation?"}
 
 
+def test_prompt_exposes_grounded_json_contract_and_implicit_policy() -> None:
+    prompt = build_chat_prompt(
+        question="What is escalation?",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(),
+                document_id=uuid.uuid4(),
+                document_name="handbook.pdf",
+                chunk_index=0,
+                text="Escalation starts after triage.",
+                source_metadata={"structural_parent_id": "internal-only"},
+            )
+        ],
+        recent_messages=[],
+    )
+    system = prompt.messages[0]["content"]
+    assert '"grounded-answer-v1"' in system
+    assert "exact, non-empty substring" in system
+    assert "untrusted evidence" in system
+    assert "Facet 0 may cite only source numbers: 1" in system
+    assert "internal-only" not in system
+    assert prompt.facet_policies[0].allowed_source_numbers == (1,)
+
+
+def test_prompt_refuses_duplicate_table_facet_outcomes_before_provider_dispatch() -> None:
+    document_id = uuid.uuid4()
+    selection = TableSelectionCandidate(document_id, "table.docx", 0)
+    plan = TableSelectionPlan(
+        original_query="duplicate facets",
+        outcomes=[
+            TableFacetOutcome(TableQueryFacet(0, "first"), "selected", selection),
+            TableFacetOutcome(TableQueryFacet(0, "second"), "selected", selection),
+        ],
+    )
+    prompt = build_chat_prompt(
+        question="duplicate facets",
+        retrieved_chunks=[
+            RetrievalCandidate(
+                chunk_id=uuid.uuid4(), document_id=document_id, document_name="table.docx",
+                chunk_index=0, text="row", source_metadata={}, score_metadata={"table_facet_indexes": [0]},
+            )
+        ],
+        recent_messages=[],
+        table_selection_plan=plan,
+    )
+    assert prompt.should_refuse
+    assert prompt.messages == []
+
+
 def test_prompt_redacts_internal_pdf_geometry_but_keeps_page_provenance() -> None:
     prompt = build_chat_prompt(
         question="What does page two say?",

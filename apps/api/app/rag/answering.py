@@ -1,5 +1,10 @@
-from dataclasses import dataclass, field
-
+from app.rag.grounded_answer import (
+    AnswerResult,
+    GroundedAnswerValidationError,
+    immutable_sources,
+    render_validated_answer,
+    validate_provider_answer,
+)
 from app.rag.prompting import PromptSource, build_chat_prompt
 from app.rag.providers.chat import OpenAIChatProvider
 from app.rag.providers.types import ChatProvider
@@ -16,15 +21,6 @@ NO_ANSWER_MESSAGE = (
     "I cannot answer this from the selected knowledge base. The retrieved "
     "documents do not contain enough relevant information."
 )
-
-
-@dataclass(frozen=True)
-class AnswerResult:
-    """Generated answer plus model and citation source data."""
-
-    answer: str
-    model: str
-    citation_sources: list[PromptSource] = field(default_factory=list)
 
 
 def generate_answer(
@@ -51,12 +47,39 @@ def generate_answer(
         evidence_selection_plan=evidence_selection_plan,
     )
     if prompt.should_refuse:
-        return AnswerResult(answer=NO_ANSWER_MESSAGE, model="local-refusal")
+        return AnswerResult(
+            answer=NO_ANSWER_MESSAGE,
+            model="local-refusal",
+            grounding_status="local_refusal",
+        )
 
     provider = chat_provider or OpenAIChatProvider.from_settings()
     result = provider.generate_chat_completion(prompt.messages, temperature=0.1)
+    try:
+        claims = validate_provider_answer(
+            result.content,
+            prompt.citation_map,
+            prompt.facet_policies,
+        )
+        answer = render_validated_answer(claims, prompt.facet_policies, question)
+    except GroundedAnswerValidationError as exc:
+        return AnswerResult(
+            answer=NO_ANSWER_MESSAGE,
+            model="local-grounding-refusal",
+            grounding_status="contract_refusal",
+            grounding_reason=exc.reason,
+        )
+    used_sources: list[PromptSource] = []
+    seen: set[int] = set()
+    for claim in claims:
+        for citation in claim.citations:
+            if citation.source_number not in seen:
+                seen.add(citation.source_number)
+                used_sources.append(prompt.citation_map[citation.source_number])
     return AnswerResult(
-        answer=result.content,
+        answer=answer,
         model=result.model,
-        citation_sources=list(prompt.citation_map.values()),
+        claims=claims,
+        allowed_sources=immutable_sources(prompt.citation_map),
+        citation_sources=used_sources,
     )

@@ -9,6 +9,7 @@ from app.models.metrics import ChatRequestMetric
 from app.models.project import Project
 from app.models.retrieval import RetrievalLog
 from app.rag.providers.chat import ChatProviderResult
+from tests.grounded_test_helpers import grounded_content
 from tests.retrieval_test_helpers import seed_retrieval_chunk
 
 
@@ -99,7 +100,7 @@ class FakeChatProvider:
 
     def generate_chat_completion(self, messages, temperature=0.1):
         self.calls.append(messages)
-        return ChatProviderResult(content="Escalation starts after triage.", model="fake-chat")
+        return ChatProviderResult(content=grounded_content(messages, "Escalation starts after triage."), model="fake-chat")
 
 
 def seed_ambiguous_tables(sqlite_session_factory) -> tuple[uuid.UUID, list[uuid.UUID]]:
@@ -245,6 +246,8 @@ def test_chat_api_creates_conversation_messages_and_citations(
         assert db.query(Message).count() == 2
         assert db.query(MessageCitation).count() == 1
         assert db.query(RetrievalLog).count() == 1
+        assistant = db.get(Message, uuid.UUID(body["assistant_message_id"]))
+        assert assistant.message_metadata["grounding"] == {"status": "validated", "claim_count": 1}
 
 
 def test_chat_api_passes_reranker_options_to_retrieval(
@@ -378,6 +381,92 @@ def test_chat_api_returns_refusal_without_retrieved_context(
 
     assert response.status_code == 200
     assert "cannot answer" in response.json()["answer"].lower()
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(response.json()["assistant_message_id"]))
+        assert assistant.message_metadata["grounding"] == {
+            "status": "local_refusal",
+            "claim_count": 0,
+        }
+
+
+def test_chat_api_records_contract_refusal_without_citations(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    with sqlite_session_factory() as db:
+        project, _, _ = seed_retrieval_chunk(
+            db, "contract-refusal", "Escalation starts after triage.", [0.1] * 1024
+        )
+        db.commit()
+        project_id = project.id
+
+    class InvalidProvider:
+        def generate_chat_completion(self, messages, temperature=0.1):
+            return ChatProviderResult(content="free-form bypass", model="invalid-chat")
+
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: _constant_embedding_provider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: InvalidProvider(),
+    )
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={"message": "What is escalation?", "retrieval": {"mode": "hybrid", "top_k": 3}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == "local-grounding-refusal"
+    assert response.json()["citations"] == []
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(response.json()["assistant_message_id"]))
+        assert assistant.message_metadata["grounding"] == {
+            "status": "contract_refusal",
+            "claim_count": 0,
+            "reason": "invalid_json",
+        }
+
+
+def test_chat_api_redacts_unpaired_surrogate_provider_output(
+    api_client,
+    sqlite_session_factory,
+    monkeypatch,
+) -> None:
+    with sqlite_session_factory() as db:
+        project, _, _ = seed_retrieval_chunk(
+            db, "surrogate-refusal", "Escalation starts after triage.", [0.1] * 1024
+        )
+        db.commit()
+        project_id = project.id
+
+    class SurrogateProvider:
+        def generate_chat_completion(self, messages, temperature=0.1):
+            return ChatProviderResult(content="\ud800", model="invalid-chat")
+
+    monkeypatch.setattr(
+        "app.rag.retrieval.service.get_embedding_provider_from_settings",
+        lambda: _constant_embedding_provider(),
+    )
+    monkeypatch.setattr(
+        "app.rag.answering.OpenAIChatProvider.from_settings",
+        lambda: SurrogateProvider(),
+    )
+    response = api_client.post(
+        f"/api/projects/{project_id}/chat/messages",
+        json={"message": "What is escalation?", "retrieval": {"mode": "hybrid", "top_k": 3}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == "local-grounding-refusal"
+    assert response.json()["citations"] == []
+    with sqlite_session_factory() as db:
+        assistant = db.get(Message, uuid.UUID(response.json()["assistant_message_id"]))
+        grounding = assistant.message_metadata["grounding"]
+        assert grounding == {"status": "contract_refusal", "claim_count": 0, "reason": "invalid_json"}
+        assert "\ud800" not in str(assistant.message_metadata)
 
 
 def test_chat_api_clarifies_ambiguous_tables_without_calling_provider(
@@ -415,6 +504,10 @@ def test_chat_api_clarifies_ambiguous_tables_without_calling_provider(
 
     with sqlite_session_factory() as db:
         assistant = db.get(Message, uuid.UUID(body["assistant_message_id"]))
+        assert assistant.message_metadata["grounding"] == {
+            "status": "local_refusal",
+            "claim_count": 0,
+        }
         candidates = assistant.message_metadata["table_selection"]["candidates"]
         assert {uuid.UUID(candidate["document_id"]) for candidate in candidates} == set(document_ids)
         assert all("score" not in candidate for candidate in candidates)
