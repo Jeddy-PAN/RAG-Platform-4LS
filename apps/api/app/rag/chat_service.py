@@ -4,12 +4,17 @@ import uuid
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.conversation import MessageRole
 from app.models.retrieval import RetrievalMode
 from app.rag.answering import AnswerResult, generate_answer
-from app.rag.citations import persist_citations
+from app.rag.citations import (
+    CitationPersistenceError,
+    bindings_from_claims,
+    persist_citation_bindings,
+)
 from app.rag.providers.chat import ChatProviderError
 from app.rag.providers.round4b import get_round4b_providers
 from app.rag.retrieval.service import run_retrieval
@@ -380,13 +385,40 @@ def send_chat_message(
         answer.answer,
         metadata=message_metadata,
     )
-    citations = persist_citations(
-        db,
-        project_id,
-        assistant_message.id,
-        [source.chunk_id for source in answer.citation_sources],
-    )
-    db.commit()
+    try:
+        citations = persist_citation_bindings(
+            db,
+            project_id,
+            assistant_message.id,
+            bindings_from_claims(answer.claims),
+            answer.allowed_sources,
+        )
+        db.commit()
+    except (CitationPersistenceError, SQLAlchemyError) as exc:
+        db.rollback()
+        failure_reason = exc.reason if isinstance(exc, CitationPersistenceError) else "database_error"
+        assistant_message = create_message(
+            db,
+            project_id,
+            conversation.id,
+            MessageRole.assistant,
+            "I cannot answer this from the selected knowledge base. The retrieved "
+            "documents do not contain enough relevant information.",
+            metadata={
+                "model": "local-citation-refusal",
+                "retrieval_log_id": str(retrieval.retrieval_log_id),
+                "context_partial": retrieval.context_partial,
+                "grounding": {"status": "local_refusal", "claim_count": 0, "reason": failure_reason},
+            },
+        )
+        answer = AnswerResult(
+            answer=assistant_message.content,
+            model="local-citation-refusal",
+            grounding_status="local_refusal",
+            grounding_reason=failure_reason,
+        )
+        citations = []
+        db.commit()
     for citation in citations:
         db.refresh(citation)
     db.refresh(user_message)

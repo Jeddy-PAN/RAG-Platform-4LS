@@ -156,6 +156,19 @@ def test_search_representation_migration_contains_fields_and_trigger() -> None:
     assert "legacy-v0" in migration_text
 
 
+def test_precise_citation_migration_is_nullable_and_reversible() -> None:
+    migration_file = API_ROOT / "alembic" / "versions" / "0005_add_precise_citation_bindings.py"
+    migration_text = migration_file.read_text()
+    assert 'down_revision = "0004_add_search_representation"' in migration_text
+    for field in ("claim_index", "source_number", "quote_start", "quote_end"):
+        assert field in migration_text
+        assert "nullable=True" in migration_text
+    assert "ix_message_citations_message_claim_citation" in migration_text
+    assert "ck_message_citations_quote_offsets_paired" in migration_text
+    assert "ck_message_citations_quote_end_nonnegative" in migration_text
+    assert "def downgrade" in migration_text
+
+
 @pytest.mark.integration
 def test_search_representation_fields_and_trigger(migrated_engine) -> None:
     """New fields exist and search_vector follows search_text with a text fallback."""

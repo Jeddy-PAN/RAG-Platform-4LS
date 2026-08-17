@@ -29,8 +29,12 @@ export function CitationList({ citations }: CitationListProps) {
       {isExpanded ? (
         <ol className="citation-list">
           {citations.map((citation) => (
-            <li key={`${citation.chunk_id}-${citation.citation_index}`}>
-              <span>[{citation.citation_index}] {metadataLabel(citation.citation_metadata)}</span>
+            <li key={`${citation.claim_index ?? "legacy"}-${citation.chunk_id}-${citation.citation_index}`}>
+              <span>
+                [{citation.citation_index}]
+                {citation.claim_index !== null ? ` Claim ${citation.claim_index}` : ""}
+                {` ${metadataLabel(citation.citation_metadata)}`}
+              </span>
               {citation.quote ? <q>{citation.quote}</q> : null}
             </li>
           ))}

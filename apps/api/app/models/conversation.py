@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -80,6 +80,13 @@ class MessageCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "message_citations"
     __table_args__ = (
         Index("ix_message_citations_project_message", "project_id", "message_id"),
+        Index("ix_message_citations_message_claim_citation", "message_id", "claim_index", "citation_index"),
+        CheckConstraint("claim_index IS NULL OR claim_index > 0", name="ck_message_citations_claim_index_positive"),
+        CheckConstraint("source_number IS NULL OR source_number > 0", name="ck_message_citations_source_number_positive"),
+        CheckConstraint("(quote_start IS NULL) = (quote_end IS NULL)", name="ck_message_citations_quote_offsets_paired"),
+        CheckConstraint("quote_start IS NULL OR quote_start >= 0", name="ck_message_citations_quote_start_nonnegative"),
+        CheckConstraint("quote_end IS NULL OR quote_end >= 0", name="ck_message_citations_quote_end_nonnegative"),
+        CheckConstraint("quote_end IS NULL OR quote_end >= quote_start", name="ck_message_citations_quote_offsets_ordered"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -101,7 +108,11 @@ class MessageCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     citation_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    claim_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quote_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quote_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     citation_metadata: Mapped[dict] = mapped_column(
         json_dict_type(), default=dict, nullable=False
     )

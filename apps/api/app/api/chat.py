@@ -42,8 +42,12 @@ def send_message(
         citations=[
             ChatCitationRead(
                 citation_index=citation.citation_index,
+                claim_index=citation.claim_index,
+                source_number=citation.source_number,
                 chunk_id=citation.chunk_id,
                 quote=citation.quote,
+                quote_start=citation.quote_start,
+                quote_end=citation.quote_end,
                 citation_metadata=citation.citation_metadata,
             )
             for citation in result["citations"]

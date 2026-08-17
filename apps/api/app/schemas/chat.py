@@ -47,8 +47,12 @@ class ChatCitationRead(BaseModel):
     """Citation returned with a chat answer."""
 
     citation_index: int
+    claim_index: int | None
+    source_number: int | None
     chunk_id: uuid.UUID
     quote: str | None
+    quote_start: int | None
+    quote_end: int | None
     citation_metadata: dict
 
 

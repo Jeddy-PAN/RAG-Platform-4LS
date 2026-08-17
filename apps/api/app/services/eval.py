@@ -336,7 +336,11 @@ def run_dataset(
 
             retrieved_chunk_ids = {candidate.chunk_id for candidate in retrieval.results}
             retrieved_document_ids = {candidate.document_id for candidate in retrieval.results}
-            citation_chunk_ids = {source.chunk_id for source in answer.citation_sources}
+            citation_chunk_ids = {
+                citation.chunk_id
+                for claim in answer.claims
+                for citation in claim.citations
+            }
             hit = (
                 question.expected_chunk_id in retrieved_chunk_ids
                 if question.expected_chunk_id is not None

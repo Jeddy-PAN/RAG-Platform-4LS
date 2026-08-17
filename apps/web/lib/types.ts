@@ -48,8 +48,12 @@ export type RetrievalMode = "vector" | "keyword" | "hybrid";
 
 export type ChatCitation = {
   citation_index: number;
+  claim_index: number | null;
+  source_number: number | null;
   chunk_id: UUID;
   quote: string | null;
+  quote_start: number | null;
+  quote_end: number | null;
   citation_metadata: Record<string, unknown>;
 };
 
